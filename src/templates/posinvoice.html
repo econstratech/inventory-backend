@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Invoice</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      padding: 15px;
+      margin: 0;
+    }
+
+    .header,
+    .section,
+    .footer {
+      margin-bottom: 20px;
+    }
+
+    .section-title {
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th,
+    td {
+      border: 1px solid #343434;
+      padding: 6px;
+      text-align: left;
+    }
+
+    .right-align {
+      text-align: right;
+    }
+
+    .signature {
+      margin-top: 40px;
+    }
+
+    p {
+      margin: 0;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="header" style="display: flex; align-items: center; justify-content: space-between;">
+    <div>
+      <h2>Tax Invoice</h2>
+      <p><strong>Sold By:</strong> {{COMPANY_NAME}}</p>
+      <p><strong>Ship-from Address:</strong> {{COMPANY_ADDRESS}}</p>
+      <p><strong>GSTIN:</strong> {{COMPANY_GSTIN}}</p>
+    </div>
+    <div style="
+        border: 2px dashed #cecece;
+        padding: 10px 15px;
+        font-size: 16px;
+        font-weight: 700;
+    ">
+      Invoice Number <br><span style="white-space: nowrap;"># {{INVOICE_NUMBER}}</span>
+    </div>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+
+    <div class="section" style="width: 33%;">
+      <div class="section-title">Bill To</div>
+      <p style="font-size: 14px; line-height: 1; margin: 0;">
+        {{BILLING_NAME}}<br />
+        {{BILLING_ADDRESS_LINE1}}<br />
+        {{BILLING_ADDRESS_LINE2}}<br />
+        Phone: {{BILLING_PHONE}}
+      </p>
+    </div>
+
+    <div class="section" style="width: 33%;">
+      <div class="section-title">Ship To</div>
+      <p style="font-size: 14px; line-height: 1;margin: 0;">
+        {{SHIPPING_NAME}}<br />
+        {{SHIPPING_ADDRESS_LINE1}}<br />
+        {{SHIPPING_ADDRESS_LINE2}}<br />
+        Phone: {{SHIPPING_PHONE}}
+      </p>
+    </div>
+
+    <div class="section" style="width: 33%;">
+      <p style="font-size: 14px; line-height: 1; margin: 0;">
+        <strong>Order ID:</strong> {{ORDER_ID}}<br />
+        <strong>Order Date:</strong> {{ORDER_DATE}}<br />
+        <strong>Invoice Date:</strong> {{INVOICE_DATE}}
+      </p>
+    </div>
+  </div>
+
+  
+
+  <div class="section">
+    <div class="section-title">Product Details</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Product Title</th>
+           <th style="text-align: center;">Status</th>
+          <th style="text-align: center;">Qty</th>
+          <th style="text-align: right;">Gross Amount ₹</th>
+    
+          <th style="text-align: right;">Total ₹</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{PRODUCT_ROWS}}
+      </tbody>
+    </table>
+  </div>
+  <div style="display:flex; align-items: flex-start;">
+    <div style="width: 50%;flex: 0 0 auto; padding-right: 10px;">
+      <div style="font-size: 18px;">Payment Details</div>
+      <p style="font-size: 14px;"><strong>Payment Method:</strong> {{PAYMENT_METHOD}}</p>
+      <p style="font-size: 14px;"><strong>Payment Status:</strong> {{PAYMENT_STATUS}}</p>
+      <div style="padding-top: 50px;">
+        <h5 style="margin-bottom: 0;">Rupees in word</h5>
+        <p style="margin: 0;">{{AMOUNT_IN_WORDS}}</p>
+      </div>
+    </div>
+    <div style="border-left: 1px solid #cecece;width: 50%;flex: 0 0 auto; padding-left: 10px;">
+      <div class="right-align" style="font-size: 14px;">
+        <strong>Shipping ₹ {{SHIPPING}}</strong>
+      </div>      
+      <div class="right-align" style="font-size: 14px;">
+        <strong>CGST ₹ {{CGST}}</strong>
+      </div>
+      <div class="right-align" style="font-size: 14px;">
+        <strong>SGST ₹ {{SGST}}</strong>
+      </div>
+      <div class="section right-align" style="font-size: 14px;">
+        <strong>Discount ₹ {{DISCOUNT}}</strong>
+      </div>
+      <div class="right-align" style="font-size: 20px;">
+        <strong>Grand Total ₹ {{GRAND_TOTAL}}</strong>
+      </div>
+    </div>
+  </div>
+  
+
+  <div class="signature" style="text-align: right;">
+    <p><strong> {{COMPANY_NAME}}</strong></p>
+    <div style="height: 100px;">
+
+    </div>
+    <p><em>Authorized Signatory</em></p>
+  </div>
+  <div style="height: 10px; border-bottom: 1px solid #cecece;">
+
+  </div>
+  <div style="height: 10px;">
+
+  </div>
+  <div class="footer" style="text-align: center;">
+    <p>Regd. office: {{COMPANY_ADDRESS}}</p>
+    <p>Contact {{COMPANY_NAME}} on {{COMPANY_PHONE}}|  <a href=""></a>
+    </p>
+    <p><em>Keep this invoice and manufacturer box for warranty purposes.</em></p>
+  </div>
+
+</body>
+
+</html>

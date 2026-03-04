@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Invoice</title>
+
+<style>
+    @page {
+        size: A4;
+        margin: 25px;
+    }
+
+    body {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-size: 13px;
+        color: #333;
+    }
+
+    .container {
+        width: 100%;
+    }
+
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid #222;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+
+    .company-details h2 {
+        margin: 0;
+        font-size: 22px;
+    }
+
+    .invoice-title {
+        text-align: right;
+    }
+
+    .invoice-title h1 {
+        margin: 0;
+        font-size: 26px;
+        color: #222;
+    }
+
+    .section {
+        margin-bottom: 20px;
+    }
+
+    .flex {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+    }
+
+    .box {
+        width: 98%; /* Changed from 48% to 98% to make the box wider */
+        border: 1px solid #ccc;
+        padding: 12px;
+        border-radius: 6px;
+    }
+
+    .box h4 {
+        margin: 0 0 8px 0;
+        font-size: 14px;
+        text-transform: uppercase;
+        color: #555;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    th {
+        background: #f5f5f5;
+        padding: 10px;
+        text-align: left;
+        border-bottom: 2px solid #ddd;
+        font-weight: 600;
+    }
+
+    td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+
+    .totals {
+        width: 350px;
+        margin-left: auto;
+        margin-top: 20px;
+    }
+
+    .totals td {
+        padding: 8px 10px;
+    }
+
+    .totals tr:last-child td {
+        font-size: 15px;
+        font-weight: bold;
+        border-top: 2px solid #222;
+    }
+
+    .footer {
+        margin-top: 40px;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .signature {
+        text-align: right;
+    }
+
+    .signature img {
+        height: 70px;
+        margin-bottom: 5px;
+    }
+
+    .amount-words {
+        margin-top: 15px;
+        font-style: italic;
+    }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <div class="company-details">
+            <h2>{{company.name}}</h2>
+            <div>{{company.address}}</div>
+            <div>GSTIN: {{company.gstin}}</div>
+            <div>Phone: {{company.contact}}</div>
+        </div>
+
+        <div class="invoice-title">
+            <h1>INVOICE</h1>
+            <div><strong>No:</strong> {{otherInfo.refnumber}}</div>
+            <div><strong>Date:</strong> {{otherInfo.today}}</div>
+            <div><strong>Payment Terms:</strong> {{otherInfo.payment_terms}}</div>
+        </div>
+    </div>
+
+    <!-- Billing Section -->
+    <div class="section flex">
+        <div class="box">
+            <h4>Bill To</h4>
+            <div>{{customer.name}}</div>
+            <div>{{customer.address}}</div>
+            <div>GSTIN: {{customer.gstin}}</div>
+            <div>Phone: {{customer.phone}}</div>
+        </div>
+
+        <!-- <div class="box">
+            <h4>Supplier (Bill From)</h4>
+            <div>{{supplier_name}}</div>
+            <div>{{supplier_address}}</div>
+            <div>GSTIN: {{supplier_gstin}}</div>
+            <div>Phone: {{supplier_phone}}</div>
+        </div> -->
+    </div>
+
+    <!-- Products Table -->
+    <div class="section">
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th>Tax %</th>
+                    <!-- <th>Date Req.</th> -->
+                    <th class="text-right">Qty</th>
+                    <th class="text-right">Unit Price</th>
+                    <th class="text-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#products}}
+                <tr>
+                    <td>{{description}}</td>
+                    <td>{{tax}}</td>
+                    <!-- <td>{{expected_delivery_date}}</td> -->
+                    <td class="text-right">{{qty}}</td>
+                    <td class="text-right">₹ {{unitPrice}}</td>
+                    <td class="text-right">₹ {{amount}}</td>
+                </tr>
+                {{/products}}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Totals -->
+    <table class="totals">
+        <tr>
+            <td>Subtotal</td>
+            <td class="text-right">₹ {{subtotal}}</td>
+        </tr>
+        <tr>
+            <td>Total Tax</td>
+            <td class="text-right">₹ {{total_tax}}</td>
+        </tr>
+        <tr>
+            <td>Total Due</td>
+            <td class="text-right">₹ {{grand_total}}</td>
+        </tr>
+    </table>
+
+    <div class="amount-words">
+        Amount in Words: <strong>{{amount_in_words}}</strong>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <div>
+            <strong>Declaration</strong><br>
+            We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+        </div>
+
+        <div class="signature">
+            <div>For {{company.name}}</div>
+            <img src="{{otherInfo.signature}}" />
+            <div><strong>Authorised Signatory</strong></div>
+        </div>
+    </div>
+
+</div>
+</body>
+</html>

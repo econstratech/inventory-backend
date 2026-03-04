@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Purchase Order</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header img {
+            width: 100px;
+        }
+        .header h1 {
+            font-size: 24px;
+        }
+        .details, .products {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .details td, .products th, .products td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        .products th {
+            background-color: #f2f2f2;
+        }
+        .totals {
+            float: right;
+            width: 300px;
+        }
+        .totals td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div style="background-color: rgb(255, 255, 255); padding: 50px;">
+        <h2 style="text-align: center;">Sales Order</h2>
+        <table style="border-collapse: collapse; width: 100%;">
+            <table style="border-collapse: collapse; width: 100%; border: 1px solid rgb(67, 66, 66);">
+                <tr>
+                    <td style="border: 1px solid rgb(67, 66, 66);">
+                        <p style="margin-bottom: 0;"><strong>Invoice To</strong>
+                            <br>J K Enterprise
+                            <br>R H Road
+                            <br>N 24 Pgs PIN :700141
+                            <br>DIST.: N 24 Pgs, STATE :West Bengal
+                            <br>GSTIN : 27AAFFM0414M1ZC
+                            <br>CONTACT : 9874712581</p>
+                    </td>
+                    <td style="border: 1px solid rgb(67, 66, 66);">
+                        <table style="border-collapse: collapse; width: 100%;">
+                            <tr>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66); border-right: 1px solid rgb(67, 66, 66);"><strong>Voucher No.</strong>
+                                    <br><strong>{{ otherInfo.refnumber }}</strong></td>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66);">Dated
+                                    <br><strong>{{ otherInfo.today }}</strong></td>
+                            </tr>
+                            <tr>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66); border-right: 1px solid rgb(67, 66, 66);"></td>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66);">Mode/Terms of Payment
+                                    <br><strong>120</strong></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66); border-right: 1px solid rgb(67, 66, 66);">Reference No. &amp; Date.
+                                    <br><strong>006/2023-24</strong></td>
+                                <td style="border-bottom: 1px solid rgb(67, 66, 66);"><strong>Other References</strong></td>
+                            </tr>
+                            <tr>
+                                <td style="border-right: 1px solid rgb(67, 66, 66);"><strong>Expiration : {{otherInfo.dateline}}</strong></td>
+                                <td><strong>Destination</strong></td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid rgb(67, 66, 66); width: 49.5%;">
+                        <p style="margin-bottom: 0;"><strong>Consignee (Ship to)</strong>
+                            <br>J K Enterprise
+                            <br>R H Road
+                            <br>N 24 Pgs PIN :700141
+                            <br>DIST.: N 24 Pgs, STATE :West Bengal
+                            <br>GSTIN : 27AAFFM0414M1ZC
+                            <br>CONTACT : 9874712581</p>
+                    </td>
+                    <td rowspan="3" valign="top" style="border: 1px solid rgb(67, 66, 66);">
+                        <p><strong>Terms of Delivery</strong></p>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border: 1px solid rgb(67, 66, 66);">
+                        <p><strong>Supplier (Bill from)</strong>
+                            <br>{{vendor.vendorName}}
+                            <br>{{vendor.address}}
+                            <br>{{vendor.city}} - {{vendor.zip}}
+                            <br>{{vendor.state}}, {{vendor.country}}
+                            
+                            <br>GSTIN : {{vendor.gstin}}
+                            <br>CONTACT : {{vendor.phone}}</p>
+                    </td>
+                </tr>
+            </table>
+            <table style="border-collapse: collapse; width: 100%; border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">
+                <tr>
+                    
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Description of Goods</th>
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Taxes</th>
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Date Req.</th>
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Qty</th>
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Unit Price</th>
+                    <th style="border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">Amount</th>
+                </tr>
+                {{#each products}}
+                <tr>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.description}}</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.tax}}%</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.dateReq}}</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.qty}}</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.unitPrice}}</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;">{{this.amount}}</td>
+                </tr>
+                {{/each}}
+               
+                <tr>
+                   
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                </tr>
+                <tr>
+                   
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                </tr>
+                <tr>
+                   
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden; border-top: 1px solid rgb(67, 66, 66); text-align: right;">{{ otherInfo.UntaxedAmount }}</td>
+                </tr>
+                <tr>
+                    
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden; text-align: right;" ></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden;text-align: right;"> </td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; height: 30px; overflow: hidden; text-align: right;"></td>
+                </tr>
+                <tr>
+                    
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; text-align: right;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700;text-align: right;">Advance</td>
+                    <td valign="top" style="border-right: 1px solid rgb(67, 66, 66); font-weight: 700; text-align: right;">{{ otherInfo.advancepayment }}</td>
+                </tr>
+                <tr>
+                   
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700; text-align: right;"></td>
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700;"></td>
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700;text-align: right;">Total Due(Incl all Taxes)</td>
+                    <td valign="top" style="border: 1px solid rgb(67, 66, 66); font-weight: 700; text-align: right;"> {{ otherInfo.total_amount }}</td>
+                </tr>
+            </table>
+            <table style="border-collapse: collapse; width: 100%; border-width: 0px 1px 1px; border-top-style: initial; border-right-style: solid; border-bottom-style: solid; border-left-style: solid; border-top-color: initial; border-right-color: rgb(67, 66, 66); border-bottom-color: rgb(67, 66, 66); border-left-color: rgb(67, 66, 66); border-image: initial;">
+                <tr>
+                    <td valign="top" style="height: 80px; display: table-cell; width: 50%;">
+                        <p style="font-weight: 500; margin-bottom: 0px;">Amount Chargeable (in words) </p>
+                        <p style="font-weight: 700; margin-bottom: 0px;">{{otherInfo.totalAmountInWords}} Only</p>
+                    </td>
+                    <td valign="top" style="text-align: right;">
+                        <p style="font-weight: 700; margin-bottom: 0px;">E. &amp; O.E</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td valign="top" style="display: table-cell; width: 50%;">
+                        <p style="font-weight: 500; margin-bottom: 0px;">Company’s PAN <span style="font-weight: 700;">: AAFFM0414M</span></p>
+                        <p style="font-weight: 700; margin-bottom: 0px;">Declaration</p>
+                    </td>
+                    <td valign="top" style="text-align: right; border-width: 1px 1px 0px; border-top-style: solid; border-right-style: solid; border-bottom-style: initial; border-left-style: solid; border-top-color: rgb(67, 66, 66); border-right-color: rgb(67, 66, 66); border-bottom-color: initial; border-left-color: rgb(67, 66, 66); border-image: initial;">
+                        <p style="font-weight: 700; margin-bottom: 0px;">for {{vendor.vendorName}}</p>
+                    </td>
+                </tr>
+                <tr>
+                    <td valign="top" style="border-top: 1px solid rgb(67, 66, 66); display: table-cell; width: 50%;">
+                        <p style="font-weight: 500; margin-bottom: 0px;">We declare that this purchase order shows the actual price of the goods
+                            <br>described and that all particulars are true and correct.</p>
+                    </td>
+                    <td valign="top" style="text-align: right; border-left: 1px solid rgb(67, 66, 66);">
+                        <p style="margin-right: 20px;";><img src="{{otherInfo.signature}}" width="130"></p>
+                        <p style="font-weight: 700; margin-bottom: 0px;">Authorised Signatory</p>
+                    </td>
+                </tr>
+            </table>
+        </table>
+    </div>
+    
+</body>
+</html>
