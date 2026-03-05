@@ -143,6 +143,10 @@ ProductStockEntry.belongsTo(User, {
     as: 'user'
 });
 
+ProductStockEntry.belongsTo(ProductVariant, {
+    foreignKey: 'product_variant_id',
+    as: 'productVariant'
+});
 ProductVariant.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 ProductVariant.belongsTo(MasterUOM, { foreignKey: 'uom_id', as: 'masterUOM' });
 ProductVariant.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

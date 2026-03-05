@@ -959,7 +959,7 @@
  * /api/product/add-to-stock:
  *   post:
  *     summary: Add multiple products to stock
- *     description: Add multiple products to stock at once. Validates that no duplicate product_id and warehouse_id combinations exist in the payload.
+ *     description: Add multiple products to stock at once. Validates that no duplicate product_id, product_variant_id, and warehouse_id combinations exist in the payload. Each entry must include a product variant ID.
  *     tags: [Product]
  *     security:
  *       - bearerAuth: []
@@ -974,15 +974,18 @@
  *               type: object
  *               required:
  *                 - product_id
+ *                 - product_variant_id
  *                 - warehouse_id
  *                 - quantity
- *                 - buffer_size
- *                 - in_out_status
  *               properties:
  *                 product_id:
  *                   type: integer
  *                   example: 12
  *                   description: ID of the product
+ *                 product_variant_id:
+ *                   type: integer
+ *                   example: 5
+ *                   description: ID of the product variant (UOM-specific variant)
  *                 warehouse_id:
  *                   type: integer
  *                   example: 1
@@ -994,22 +997,18 @@
  *                 buffer_size:
  *                   type: integer
  *                   example: 10
- *                   description: Buffer size for the product
- *                 in_out_status:
- *                   type: integer
- *                   example: 1
- *                   description: Stock status (1=IN, 0=OUT)
+ *                   description: Buffer size for the product (optional)
  *             example:
  *               - product_id: 12
+ *                 product_variant_id: 5
  *                 warehouse_id: 1
  *                 quantity: 50
  *                 buffer_size: 10
- *                 in_out_status: 1
  *               - product_id: 16
+ *                 product_variant_id: 8
  *                 warehouse_id: 1
  *                 quantity: 100
  *                 buffer_size: 10
- *                 in_out_status: 1
  *     responses:
  *       200:
  *         description: Stock entries added successfully
@@ -1039,6 +1038,9 @@
  *                       product_id:
  *                         type: integer
  *                         example: 12
+ *                       product_variant_id:
+ *                         type: integer
+ *                         example: 5
  *                       warehouse_id:
  *                         type: integer
  *                         example: 1
@@ -1051,9 +1053,6 @@
  *                       quantity:
  *                         type: integer
  *                         example: 50
- *                       in_out_status:
- *                         type: integer
- *                         example: 1
  *                       created_at:
  *                         type: string
  *                         format: date-time
@@ -1075,6 +1074,46 @@
  *                 message:
  *                   type: string
  *                   example: "Duplicate product_id and warehouse_id combinations found in payload"
+ *                   description: Error message indicating duplicate entries or validation errors
+ *                 errors:
+ *                   type: array
+ *                   description: List of validation errors (present when validation fails)
+ *                   items:
+ *                     type: string
+ *                     example: "Entry 1: product_variant_id is required"
+ *                 duplicates:
+ *                   type: array
+ *                   description: List of duplicate entries (present when duplicates are found)
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       product_id:
+ *                         type: integer
+ *                         example: 12
+ *                       product_variant_id:
+ *                         type: integer
+ *                         example: 5
+ *                       warehouse_id:
+ *                         type: integer
+ *                         example: 1
+ *                       entry_index:
+ *                         type: integer
+ *                         example: 3
+ *                 existing_entries:
+ *                   type: array
+ *                   description: List of existing stock entries (present when stock already exists)
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       product_id:
+ *                         type: integer
+ *                         example: 12
+ *                       product_variant_id:
+ *                         type: integer
+ *                         example: 5
+ *                       warehouse_id:
+ *                         type: integer
+ *                         example: 1
  *                 duplicates:
  *                   type: array
  *                   description: List of duplicate entries
