@@ -2638,7 +2638,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
     if (products.length > 0) {
       const productPromises = products.map(async (product) => {
         
-        const received = parseFloat(product.received_now);
+        const received = product.received_now ? parseFloat(product.received_now) : 0;
         const unit_price = parseFloat(product.unit_price);
         const taxRate = parseFloat(product.tax);
 
@@ -2802,10 +2802,6 @@ exports.AddOrUpdateRecv = async (req, res) => {
     }
     // Commit the transaction
     await transaction.commit();
-
-    // const updatedPurchase = await Recv.findByPk(purchaseData.id, {
-    //   include: [{ model: RecvProduct, as: "recvPro" }],
-    // });
 
     return res.status(200).json({
       success: true,

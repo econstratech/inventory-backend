@@ -32,28 +32,6 @@ app.use('/api-documentation', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 }));
 registerRoutes(app, appPrefix);
 
-
-
-
-// app.get("/", async (req, res) => {
-//     try {
-
-//         // const phoneNumber = '919163220851';
-//         // const message = 'this is test message';
-//         // // whatsappNotification(phoneNumber,message)
-//         // // MaytapiWhatsappNotification(phoneNumber,message)
-//         // const info = await sendMail(
-//         //     'sudipta.econstra@gmail.com', 
-//         //     'Test Subject',
-//         //     'Hello world?', 
-//         //     '<b>Hello world?</b>' 
-//         // );
-
-//         return res.status(200).json("info");
-//     } catch (err) {
-//         res.status(400).json("error occure")
-//     }
-// })
   // ✅ Serve static React build (after APIs)
   app.use(express.static(path.join(__dirname, '../build')));
 
