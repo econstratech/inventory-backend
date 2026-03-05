@@ -711,95 +711,136 @@ exports.GetAllProducts = async (req, res) => {
   try {
     const company_id = req.user.company_id;
     const { type } = req.query;
-    // pagination params
+
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
-    const searchkey = (req.query.searchkey || '').trim();
 
-    // base where
+    const searchkey = (req.query.searchkey || "").trim();
+    const product_category_id = req.query.product_category_id;
+
+    /* -------------------- BASE WHERE -------------------- */
+
     const where = {
       status: 1,
       company_id: company_id,
-      // Filter by product category if provided
-      ...(req.query.product_category_id && { product_category_id: req.query.product_category_id }),
     };
 
-    if (searchkey !== '') {
+    if (product_category_id) {
+      where.product_category_id = product_category_id;
+    }
+
+    /* -------------------- SEARCH -------------------- */
+
+    if (searchkey) {
       where[Op.or] = [
-          { product_code: { [Op.like]: `%${searchkey}%` } },
-          { sku_product: { [Op.like]: `%${searchkey}%` } },
-          { product_name: { [Op.like]: `%${searchkey}%` } },
+        { product_code: { [Op.like]: `%${searchkey}%` } },
+        { sku_product: { [Op.like]: `%${searchkey}%` } },
+        { product_name: { [Op.like]: `%${searchkey}%` } },
+        { "$masterBrand.name$": { [Op.like]: `%${searchkey}%` } },
       ];
     }
 
-    const include = [
-      {
-        association: 'masterProductType',
-        attributes: ['name'],
-      },
-      {
-        association: 'productCategory',
-        attributes: ['title'],
-      },
-      {
-        association: 'masterBrand',
-        attributes: ['name'],
-      },
-      {
-        association: 'productVariants',
-        attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
-        include: [
-          {
-            association: 'masterUOM',
-            attributes: ['name', 'label'],
-          }
-        ]
-      },
-      {
-        association: 'productAttributeValues',
-        attributes: ['id', 'product_attribute_id', 'value'],
-        include: [
-          {
-            association: 'productAttribute',
-            attributes: ['id', 'name', 'is_required']
-          }
-        ]
-      },
-    ];
+    /* -------------------- INCLUDE CONFIG -------------------- */
 
-    // Get list of all products
+    let include = [];
+
+    // For dropdown → no joins needed
+    if (type === "dropDown") {
+      include = [];
+    }
+
+    // For search → only brand join required
+    else if (type === "search") {
+      include = [
+        {
+          association: "masterBrand",
+          attributes: ["name"],
+          required: false,
+        },
+      ];
+    }
+
+    // Full product listing
+    else {
+      include = [
+        {
+          association: "masterBrand",
+          attributes: ["name"],
+          required: false,
+        },
+        {
+          association: "masterProductType",
+          attributes: ["name"],
+        },
+        {
+          association: "productCategory",
+          attributes: ["title"],
+        },
+        {
+          association: "productVariants",
+          attributes: ["id", "weight_per_unit", "price_per_unit", "uom_id"],
+          include: [
+            {
+              association: "masterUOM",
+              attributes: ["name", "label"],
+            },
+          ],
+        },
+        {
+          association: "productAttributeValues",
+          attributes: ["id", "product_attribute_id", "value"],
+          include: [
+            {
+              association: "productAttribute",
+              attributes: ["id", "name", "is_required"],
+            },
+          ],
+        },
+      ];
+    }
+
+    /* -------------------- QUERY -------------------- */
+
     const productsList = await Product.findAndCountAll({
       attributes: [
-        'id', 
-        'product_code', 
-        'product_category_id',
-        'product_name', 
-        'sku_product', 
-        'product_code', 
-        'product_type_id',
-        'is_batch_applicable',
-        'markup_percentage'
+        "id",
+        "product_code",
+        "product_category_id",
+        "product_name",
+        "sku_product",
+        "product_type_id",
+        "is_batch_applicable",
+        "markup_percentage",
       ],
       where,
-      order: [['id', 'DESC']],
+      include,
+      order: [["id", "DESC"]],
       limit,
       offset,
-      ...(type && type !== 'dropDown' ? { include: include } : {}),
+      distinct: true,
     });
 
+    /* -------------------- PAGINATION -------------------- */
 
-    // Get paginated data
-    const paginatedProductData = CommonHelper.paginate(productsList, page, limit);
+    const paginatedProductData = CommonHelper.paginate(
+      productsList,
+      page,
+      limit
+    );
 
-    return res.status(200).json({ 
-      status: true, 
-      message: "Products fetched successfully", 
-      data: paginatedProductData 
+    return res.status(200).json({
+      status: true,
+      message: "Products fetched successfully",
+      data: paginatedProductData,
     });
   } catch (err) {
     console.error("Get all products error:", err);
-    return res.status(400).json(err);
+    return res.status(400).json({
+      status: false,
+      message: "Error fetching products",
+      error: err.message,
+    });
   }
 };
 
@@ -2880,14 +2921,14 @@ exports.BulkAddToStock = async (req, res) => {
 
 /**
  * Get all stock entries
- * filters: product_id, warehouse_id, page, limit, searchkey
+ * filters: product_id, warehouse_id, brand_id, product_type_id, page, limit, searchkey
  * returns: list of stock entries
  * if error occurs, returns error message
  */
 exports.GetStockEntries = async (req, res) => {
   try {
     // query params
-    const { product_id, warehouse_id, product_type_id, searchkey } = req.query;
+    const { product_id, warehouse_id, brand_id, product_type_id, searchkey } = req.query;
      // pagination params
      const page = parseInt(req.query.page, 10) || 1;
      const limit = parseInt(req.query.limit, 10) || 10;
@@ -2907,6 +2948,8 @@ exports.GetStockEntries = async (req, res) => {
 
     // filter by searchkey if provided
     let productWhere = {};
+    let brandWhere = null;
+
     let isProductRequired = false;
     if (searchkey) {
       isProductRequired = true;
@@ -2920,6 +2963,12 @@ exports.GetStockEntries = async (req, res) => {
     // filter by product_type_id if provided
     if (product_type_id) {
       productWhere.product_type_id = product_type_id;
+      isProductRequired = true;
+    }
+
+    // filter by brand_id if provided
+    if (brand_id) {
+      brandWhere = { id: brand_id };
       isProductRequired = true;
     }
 
@@ -2939,6 +2988,7 @@ exports.GetStockEntries = async (req, res) => {
       limit,
       offset,
       subQuery: false,
+      distinct: true,
       include: [
         {
           association: 'product',
@@ -2963,6 +3013,8 @@ exports.GetStockEntries = async (req, res) => {
             {
               association: 'masterBrand',
               attributes: ['name'],
+              ...(brandWhere ? { where: brandWhere } : {}),
+              required: brandWhere ? true : false,
             }
           ]
         },
@@ -3379,6 +3431,7 @@ exports.GetProductVariants = async (req, res) => {
   try {
     const productId = req.params.id;
     const companyId = req.user.company_id;
+    const { uom_id, weight } = req.query;
 
     // Check if product exists and belongs to the company
     const product = await Product.findOne({
@@ -3390,11 +3443,28 @@ exports.GetProductVariants = async (req, res) => {
       raw: true
     });
 
+    // if product not found, return 404
     if (!product) {
       return res.status(404).json({
         status: false,
         message: "Product not found or does not belong to your company"
       });
+    }
+
+    // Build where clause for variants
+    const variantWhere = {
+      product_id: productId,
+      company_id: companyId
+    };
+
+    // Filter by UOM if provided
+    if (uom_id) {
+      variantWhere.uom_id = parseInt(uom_id);
+    }
+
+    // Filter by weight if provided
+    if (weight !== undefined && weight !== null && weight !== '') {
+      variantWhere.weight_per_unit = parseInt(weight);
     }
 
     // Get all variants for this product
@@ -3408,10 +3478,7 @@ exports.GetProductVariants = async (req, res) => {
         'created_at',
         'updated_at'
       ],
-      where: {
-        product_id: productId,
-        company_id: companyId
-      },
+      where: variantWhere,
       include: [
         {
           association: 'masterUOM',

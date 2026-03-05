@@ -417,10 +417,19 @@ exports.CreateMasterBrand = async (req, res) => {
  */
 exports.GetActiveMasterBrand = async (req, res) => {
     try {
+        const { brandName } = req.query;
+
+        // base where
+        const where = { company_id: req.user.company_id };
+
+        // if brand name is provided then add it to the where clause
+        if (brandName) {
+            where.name = { [Op.like]: `%${brandName}%` };
+        }
         // Get list of all active master brands
         const masterBrands = await MasterBrand.findAll({
             attributes: ['id', 'name', 'description'],
-            where: { company_id: req.user.company_id },
+            where,
             order: [['name', 'ASC']],
             raw: true
         });

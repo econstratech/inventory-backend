@@ -178,6 +178,12 @@
  *         schema:
  *           type: string
  *         description: search key
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Response type. If set to 'dropDown', returns minimal data without associations. For any other value or if omitted, returns full product data with associations (product variants, attributes, categories, etc.)
+ *         example: "dropDown"
  *     responses:
  *       200:
  *         description: List of products
@@ -424,7 +430,7 @@
  * /api/product/variants/{id}:
  *   get:
  *     summary: Get all variants of a product
- *     description: Retrieves all available variants for a specific product, including UOM (Unit of Measurement) details. Returns product information along with all its variants.
+ *     description: Retrieves all available variants for a specific product, including UOM (Unit of Measurement) details. Returns product information along with all its variants. Supports optional filtering by UOM ID and weight per unit.
  *     tags: [Product]
  *     security:
  *       - bearerAuth: []
@@ -436,6 +442,18 @@
  *           type: integer
  *         description: Product ID
  *         example: 1
+ *       - in: query
+ *         name: uom_id
+ *         schema:
+ *           type: integer
+ *         description: Optional filter by Unit of Measurement ID
+ *         example: 2
+ *       - in: query
+ *         name: weight
+ *         schema:
+ *           type: integer
+ *         description: Optional filter by weight per unit (exact match)
+ *         example: 300
  *     responses:
  *       200:
  *         description: Product variants fetched successfully
@@ -1298,6 +1316,16 @@
  *         schema:
  *           type: integer
  *         description: Product ID
+ *       - in: query
+ *         name: brand_id
+ *         schema:
+ *           type: integer
+ *         description: Brand ID (filters stock entries by product brand)
+ *       - in: query
+ *         name: product_type_id
+ *         schema:
+ *           type: integer
+ *         description: Product type ID (filters stock entries by product type)
  *       - in: query
  *         name: warehouse_id
  *         schema:
