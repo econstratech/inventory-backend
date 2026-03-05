@@ -3070,7 +3070,18 @@ exports.GetStockEntriesById = async (req, res) => {
     const stockEntry = await ProductStockEntry.findOne({
       attributes: ['id', 'product_id', 'warehouse_id', 'quantity', 'created_at'],
       where: { id, company_id: req.user.company_id },
-      raw: true
+      include: [
+        {
+          association: 'productVariant',
+          attributes: ['id', 'weight_per_unit'],
+          include: [
+            {
+              association: 'masterUOM',
+              attributes: ['name', 'label'],
+            }
+          ]
+        }
+      ]
     });
     // if stock entry not found, return 404
     if (!stockEntry) {
