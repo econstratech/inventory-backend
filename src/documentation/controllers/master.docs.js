@@ -567,10 +567,17 @@
  * /api/master/brand/list:
  *   get:
  *     summary: Get all active master brands
- *     description: Returns a list of all master brands for the authenticated user's company, ordered by name in ascending order
+ *     description: Returns a list of all master brands for the authenticated user's company, ordered by name in ascending order. Supports optional search by brand name using the brandName query parameter.
  *     tags: [Master]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: brandName
+ *         schema:
+ *           type: string
+ *         description: Optional search parameter to filter brands by name (partial match, case-insensitive)
+ *         example: "Nike"
  *     responses:
  *       200:
  *         description: List of active master brands fetched successfully
