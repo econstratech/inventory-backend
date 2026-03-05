@@ -30,6 +30,10 @@ const ProductStockEntry = sequelize.define(
                 key: 'id'
             }
         },
+        product_variant_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+        },
         warehouse_id: {
             type: DataTypes.BIGINT,
             allowNull: false,

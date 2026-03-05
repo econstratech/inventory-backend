@@ -2699,6 +2699,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
           } else {
             await ProductStockEntry.create({
               product_id: product.product_id,
+              product_variant_id: product.variant_id,
               warehouse_id: warehouse_id,
               company_id: req.user.company_id,
               user_id: req.user.id,

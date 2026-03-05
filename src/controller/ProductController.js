@@ -2591,6 +2591,9 @@ exports.AddToStock = async (req, res) => {
       if (!entry.product_id) {
         validationErrors.push(`Entry ${index}: product_id is required`);
       }
+      if (!entry.product_variant_id) {
+        validationErrors.push(`Entry ${index}: product_variant_id is required`);
+      }
       if (!entry.warehouse_id) {
         validationErrors.push(`Entry ${index}: warehouse_id is required`);
       }
@@ -2604,6 +2607,7 @@ exports.AddToStock = async (req, res) => {
         if (seen.has(key)) {
           duplicates.push({
             product_id: entry.product_id,
+            product_variant_id: entry.product_variant_id,
             warehouse_id: entry.warehouse_id,
             entry_index: index
           });
@@ -2634,7 +2638,8 @@ exports.AddToStock = async (req, res) => {
     // Validate that no duplicate product_id & warehouse_id combinations exist in the payload
     const productWarehousePairs = stockEntries.map(e => ({
       product_id: e.product_id,
-      warehouse_id: e.warehouse_id
+      warehouse_id: e.warehouse_id,
+      product_variant_id: e.product_variant_id
     }));
 
 
@@ -2643,7 +2648,7 @@ exports.AddToStock = async (req, res) => {
         company_id: req.user.company_id,
         [Op.or]: productWarehousePairs
       },
-      attributes: ['product_id', 'warehouse_id'],
+      attributes: ['product_id', 'warehouse_id', 'product_variant_id'],
       raw: true
     });
 
@@ -2662,6 +2667,7 @@ exports.AddToStock = async (req, res) => {
     const entriesToCreate = stockEntries.map(entry => ({
       company_id: req.user.company_id,
       product_id: entry.product_id,
+      product_variant_id: entry.product_variant_id,
       warehouse_id: entry.warehouse_id,
       buffer_size: entry.buffer_size,
       user_id: req.user.id,
@@ -2990,6 +2996,16 @@ exports.GetStockEntries = async (req, res) => {
       subQuery: false,
       distinct: true,
       include: [
+        {
+          association: 'productVariant',
+          attributes: ['id', 'weight_per_unit'],
+          include: [
+            {
+              association: 'masterUOM',
+              attributes: ['name', 'label'],
+            }
+          ]
+        },
         {
           association: 'product',
           attributes: [
