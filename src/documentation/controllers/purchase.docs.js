@@ -982,3 +982,254 @@
  *                   type: string
  *                   example: "Database connection error"
  */
+
+/**
+ * @swagger
+ * /api/purchase/recv/{purchase_id}:
+ *   post:
+ *     summary: Receive purchase products and update stock
+ *     description: Creates a receive bill for a purchase in under-review stages (status 4/5), records received products, and updates `product_stock_entries` using `warehouse_id` and product variant.
+ *     tags: [Purchase]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: purchase_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Purchase ID
+ *         example: 191
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vendor_id
+ *               - warehouse_id
+ *               - bill_number
+ *               - received_status
+ *               - products
+ *             properties:
+ *               vendor_id:
+ *                 type: integer
+ *                 description: Vendor ID for receive bill
+ *                 example: 5
+ *               warehouse_id:
+ *                 type: integer
+ *                 description: Warehouse/store ID where stock is received
+ *                 example: 1
+ *               bill_number:
+ *                 type: string
+ *                 description: Receive bill number
+ *                 example: "BILL-2026-045"
+ *               bill_reference:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Optional bill reference
+ *                 example: "REF-INV-045"
+ *               placeofsupply:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Place of supply
+ *                 example: "Gujarat"
+ *               received_status:
+ *                 type: string
+ *                 description: Set `completed` to mark purchase as fully received (status 10)
+ *                 example: "completed"
+ *               products:
+ *                 type: array
+ *                 minItems: 1
+ *                 description: Products to receive now
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - id
+ *                     - product_id
+ *                     - available_quantity
+ *                     - received_now
+ *                     - unit_price
+ *                     - tax
+ *                     - batches
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       description: Purchase product row ID
+ *                       example: 655
+ *                     product_id:
+ *                       type: integer
+ *                       description: Product ID
+ *                       example: 12
+ *                     vendor_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Vendor ID for this product row
+ *                       example: 5
+ *                     description:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Product description
+ *                       example: "Fresh raw material"
+ *                     available_quantity:
+ *                       type: number
+ *                       description: Pending quantity available to receive
+ *                       example: 100
+ *                     received_now:
+ *                       type: number
+ *                       description: Quantity being received in this request (must be <= available_quantity)
+ *                       example: 40
+ *                     unit_price:
+ *                       type: number
+ *                       format: decimal
+ *                       description: Unit price used for receive bill calculation
+ *                       example: 150.00
+ *                     tax:
+ *                       type: number
+ *                       description: Tax percentage
+ *                       example: 18
+ *                     rejected:
+ *                       type: number
+ *                       nullable: true
+ *                       description: Rejected quantity/flag if tracked by client
+ *                       example: 0
+ *                     batch_no:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Batch number for non-batch flow metadata
+ *                       example: "BATCH-001"
+ *                     manufacture_date:
+ *                       type: string
+ *                       format: date
+ *                       nullable: true
+ *                       example: "2026-01-01"
+ *                     expiry_date:
+ *                       type: string
+ *                       format: date
+ *                       nullable: true
+ *                       example: "2027-01-01"
+ *                     productVariant:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Variant used for non-batch stock update
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 98
+ *                         weight_per_unit:
+ *                           type: number
+ *                           example: 500
+ *                         masterUOM:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             name:
+ *                               type: string
+ *                               example: "g"
+ *                     batches:
+ *                       type: array
+ *                       description: Batch-wise receive entries
+ *                       items:
+ *                         type: object
+ *                         required:
+ *                           - variant_id
+ *                           - batch_no
+ *                           - quantity
+ *                         properties:
+ *                           variant_id:
+ *                             type: integer
+ *                             description: Product variant ID for this batch
+ *                             example: 98
+ *                           batch_no:
+ *                             type: string
+ *                             example: "BAT-001"
+ *                           manufacture_date:
+ *                             type: string
+ *                             format: date
+ *                             nullable: true
+ *                             example: "2026-01-01"
+ *                           expiry_date:
+ *                             type: string
+ *                             format: date
+ *                             nullable: true
+ *                             example: "2027-01-01"
+ *                           quantity:
+ *                             type: number
+ *                             example: 20
+ *           example:
+ *             vendor_id: 5
+ *             warehouse_id: 1
+ *             bill_number: "BILL-2026-045"
+ *             bill_reference: "REF-INV-045"
+ *             placeofsupply: "Gujarat"
+ *             received_status: "completed"
+ *             products:
+ *               - id: 655
+ *                 product_id: 12
+ *                 vendor_id: 5
+ *                 description: "Fresh raw material"
+ *                 available_quantity: 100
+ *                 received_now: 40
+ *                 unit_price: 150
+ *                 tax: 18
+ *                 rejected: 0
+ *                 batch_no: "BATCH-001"
+ *                 manufacture_date: "2026-01-01"
+ *                 expiry_date: "2027-01-01"
+ *                 productVariant:
+ *                   id: 98
+ *                   weight_per_unit: 500
+ *                   masterUOM:
+ *                     name: "g"
+ *                 batches:
+ *                   - variant_id: 98
+ *                     batch_no: "BAT-001"
+ *                     manufacture_date: "2026-01-01"
+ *                     expiry_date: "2027-01-01"
+ *                     quantity: 20
+ *                   - variant_id: 99
+ *                     batch_no: "BAT-002"
+ *                     manufacture_date: "2026-01-05"
+ *                     expiry_date: "2027-01-05"
+ *                     quantity: 20
+ *     responses:
+ *       200:
+ *         description: Receive order processed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Receive order created successfully"
+ *                 data:
+ *                   nullable: true
+ *                   example: null
+ *       404:
+ *         description: Purchase not found or not in under review stage
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Purchase not found or not in under review stage"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "An error occurred while creating the receive and products"
+ *                 details:
+ *                   type: string
+ */

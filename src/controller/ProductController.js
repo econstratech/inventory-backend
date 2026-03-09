@@ -980,8 +980,8 @@ exports.GetAllProductsbyStore = async (req, res) => {
     const searchkey = (req.query.searchkey || '').trim();
 
     const where = {
-      warehouse_id: storeId,
       company_id: req.user.company_id,
+      status: 1,
     };
 
     if (searchkey !== '') {
@@ -992,25 +992,40 @@ exports.GetAllProductsbyStore = async (req, res) => {
       ];
     }
     // Fetch all products for the given store
-    const getAllProductsbyStore = await ProductStockEntry.findAndCountAll({
-      attributes: ['id', 'quantity'],
+    const products = await Product.findAndCountAll({
+      attributes: ["id", "product_name", "product_code", "is_batch_applicable"],
       where,
-      order: [['id', 'DESC']],
+      order: [["id", "DESC"]],
       limit,
       offset,
-      include: [
-        { 
-          association: "product", 
-          attributes: ["id", "product_name", "product_code", "is_batch_applicable"] 
-        },
-        // { association: "masterUOM", attributes: ["name"] },
-        // { model: TrackProductStock, as: "TrackProductStock" },
-      ],
+      distinct: true,
+      include:[
+        {
+          association: "productStockEntries",
+          attributes: ['id', 'quantity', 'buffer_size'],
+          where: {
+            warehouse_id: storeId,
+          },
+          include: [
+            {
+              association: "productVariant",
+              attributes: ["id", "weight_per_unit", "price_per_unit", "uom_id"],
+              include: [
+                {
+                  association: "masterUOM",
+                  attributes: ["name", "label"],
+                },
+              ],
+            },
+          ],
+        }
+      ]
     });
+    // console.log("products", products);
 
     
     // Get paginated data
-    const paginatedProductData = CommonHelper.paginate(getAllProductsbyStore, page, limit);
+    const paginatedProductData = CommonHelper.paginate(products, page, limit);
 
     // return response
     return res.status(200).json({ message: true, data: paginatedProductData });
@@ -1275,26 +1290,28 @@ const transferProduct = async (params) => {
         purchaseOrder 
       } = params;
 
+      // If the transferred quantity is less than or equal to 0, then return false
+      if (product.transferred_quantity <= 0) {
+        resolve(null);
+      }
+
       // console.log("PARAMS:", params);
 
       // Create the stock transfer product
       const stockTransferProduct = await StockTransferProducts.create({
         stock_transfer_log_id: stockTransferLogId,
         product_id: product.id,
+        product_variant_id: product.product_variant_id,
         transferred_quantity: product.transferred_quantity,
       }, { transaction });
 
       let previousStockFromStore = null;
 
-      // If the transferred quantity is less than or equal to 0, then return false
-      if (product.transferred_quantity <= 0) {
-        resolve(null);
-      }
-
       const previousStockToStore = await ProductStockEntry.findOne({
         attributes: ['id', 'quantity'],
         where: {
           product_id: product.id,
+          product_variant_id: product.product_variant_id,
           warehouse_id: 
             transfer_type === 'sales_order_return' ? product.warehouse_id 
             : transfer_type === 'scrap_items' ? from_store : to_store,
@@ -1309,6 +1326,7 @@ const transferProduct = async (params) => {
           where: {
             product_id: product.id,
             warehouse_id: from_store,
+            product_variant_id: product.product_variant_id,
           },
         });
 
@@ -2707,14 +2725,17 @@ exports.AddToStock = async (req, res) => {
 const BULK_STOCK_HEADERS = {
   PRODUCT_CODE: 'Product Code',
   STORE_NAME: 'Store Name',
+  UOM: 'UOM',
+  WEIGHT_PER_UNIT: 'Weight Per Unit',
   QUANTITY: 'Quantity',
   BUFFER_SIZE: 'Buffer Size',
 };
 
 /**
  * Bulk add to stock from CSV file.
- * Headers: Product Code, Store Name, Quantity.
- * If (product_id, warehouse_id) exists: update quantity (add to existing). Otherwise create new ProductStockEntry.
+ * Headers: Product Code, Store Name, UOM, Weight Per Unit, Quantity, Buffer Size.
+ * Resolves product_variant_id using (product_id, uom, weight_per_unit).
+ * If (product_id, warehouse_id, product_variant_id) exists: update quantity (add to existing). Otherwise create new ProductStockEntry.
  * Optimized for 200+ rows: batch lookups, bulk create, batched updates.
  */
 exports.BulkAddToStock = async (req, res) => {
@@ -2747,7 +2768,7 @@ exports.BulkAddToStock = async (req, res) => {
     }
 
     /* -----------------------------------------------------
-       STEP 1: Aggregate (product_code + store_name)
+       STEP 1: Aggregate (product_code + store_name + uom + weight_per_unit)
        ----------------------------------------------------- */
 
     const aggregated = new Map();
@@ -2755,12 +2776,21 @@ exports.BulkAddToStock = async (req, res) => {
     for (const row of rows) {
       const product_code = String(row[BULK_STOCK_HEADERS.PRODUCT_CODE] || '').trim();
       const store_name = String(row[BULK_STOCK_HEADERS.STORE_NAME] || '').trim();
+      const uom = String(row[BULK_STOCK_HEADERS.UOM] || '').trim();
+      const weight_per_unit = Number(row[BULK_STOCK_HEADERS.WEIGHT_PER_UNIT] || 0);
       const quantity = Number(row[BULK_STOCK_HEADERS.QUANTITY]);
       const buffer_size = Number(row[BULK_STOCK_HEADERS.BUFFER_SIZE] || 0);
 
-      if (!product_code || !store_name || isNaN(quantity) || quantity < 0) continue;
+      if (
+        !product_code ||
+        !store_name ||
+        !uom ||
+        isNaN(weight_per_unit) ||
+        isNaN(quantity) ||
+        quantity < 0
+      ) continue;
 
-      const key = `${product_code}__${store_name}`;
+      const key = `${product_code}__${store_name}__${uom}__${weight_per_unit}`;
 
       if (!aggregated.has(key)) {
         aggregated.set(key, { quantity: 0, buffer_size });
@@ -2769,19 +2799,27 @@ exports.BulkAddToStock = async (req, res) => {
       const entry = aggregated.get(key);
       entry.quantity += quantity;
       entry.buffer_size = buffer_size; // last value wins
+      entry.uom = uom;
+      entry.weight_per_unit = weight_per_unit;
     }
 
     if (!aggregated.size) {
       return res.status(400).json({
         status: false,
         message:
-          'No valid rows. Each row must have Product Code, Store Name, and non-negative Quantity.',
+          'No valid rows. Each row must have Product Code, Store Name, UOM, Weight Per Unit, and non-negative Quantity.',
       });
     }
 
     const rowsToProcess = [...aggregated.entries()].map(([key, val]) => {
-      const [product_code, store_name] = key.split('__');
-      return { product_code, store_name, ...val };
+      const [product_code, store_name, uom, weightPerUnit] = key.split('__');
+      return {
+        product_code,
+        store_name,
+        uom,
+        weight_per_unit: Number(weightPerUnit),
+        ...val,
+      };
     });
 
     /* -----------------------------------------------------
@@ -2790,8 +2828,10 @@ exports.BulkAddToStock = async (req, res) => {
 
     const productCodes = [...new Set(rowsToProcess.map(r => r.product_code))];
     const storeNames = [...new Set(rowsToProcess.map(r => r.store_name))];
+    const uoms = [...new Set(rowsToProcess.map(r => r.uom))];
+    const weight_per_units = [...new Set(rowsToProcess.map(r => r.weight_per_unit))];
 
-    const [products, warehouses] = await Promise.all([
+    const [products, warehouses, masterUoms] = await Promise.all([
       Product.findAll({
         where: { product_code: productCodes, company_id: companyId },
         attributes: ['id', 'product_code'],
@@ -2802,10 +2842,48 @@ exports.BulkAddToStock = async (req, res) => {
         attributes: ['id', 'name'],
         raw: true,
       }),
+      MasterUOM.findAll({
+        where: {
+          [Op.or]: [
+            { label: uoms },
+            { name: uoms },
+          ],
+        },
+        attributes: ['id', 'label', 'name'],
+        raw: true,
+      }),
     ]);
 
     const productMap = new Map(products.map(p => [p.product_code, p.id]));
     const warehouseMap = new Map(warehouses.map(w => [w.name, w.id]));
+    const uomMap = new Map();
+    for (const u of masterUoms) {
+      if (u.label) uomMap.set(String(u.label).trim().toLowerCase(), u.id);
+      if (u.name) uomMap.set(String(u.name).trim().toLowerCase(), u.id);
+    }
+
+    const productIds = [...new Set(products.map(p => p.id))];
+    const uomIds = [...new Set(masterUoms.map(u => u.id))];
+    const variants =
+      productIds.length && uomIds.length
+        ? await ProductVariant.findAll({
+            where: {
+              company_id: companyId,
+              product_id: productIds,
+              uom_id: uomIds,
+              weight_per_unit: weight_per_units,
+            },
+            attributes: ['id', 'product_id', 'uom_id', 'weight_per_unit'],
+            raw: true,
+          })
+        : [];
+
+    const variantMap = new Map(
+      variants.map(v => [
+        `${v.product_id}_${v.uom_id}_${Number(v.weight_per_unit)}`,
+        v.id,
+      ])
+    );
 
     /* -----------------------------------------------------
        STEP 3: Resolve IDs
@@ -2817,6 +2895,7 @@ exports.BulkAddToStock = async (req, res) => {
     for (const r of rowsToProcess) {
       const product_id = productMap.get(r.product_code);
       const warehouse_id = warehouseMap.get(r.store_name);
+      const uom_id = uomMap.get(String(r.uom).trim().toLowerCase());
 
       if (!product_id) {
         errors.push({ ...r, reason: 'Product not found' });
@@ -2828,7 +2907,24 @@ exports.BulkAddToStock = async (req, res) => {
         continue;
       }
 
-      resolved.push({ product_id, warehouse_id, ...r });
+      if (!uom_id) {
+        errors.push({ ...r, reason: 'UOM not found' });
+        continue;
+      }
+
+      const variantKey = `${product_id}_${uom_id}_${Number(r.weight_per_unit)}`;
+      console.log("variantKey", variantKey);
+      console.log("variantMap", variantMap);
+      const product_variant_id = variantMap.get(variantKey);
+      if (!product_variant_id) {
+        errors.push({
+          ...r,
+          reason: 'Product variant not found for UOM and Weight Per Unit',
+        });
+        continue;
+      }
+
+      resolved.push({ product_id, warehouse_id, product_variant_id, ...r });
     }
 
     if (!resolved.length) {
@@ -2849,23 +2945,27 @@ exports.BulkAddToStock = async (req, res) => {
         [Op.or]: resolved.map(r => ({
           product_id: r.product_id,
           warehouse_id: r.warehouse_id,
+          product_variant_id: r.product_variant_id,
         })),
       },
-      attributes: ['id', 'product_id', 'warehouse_id', 'quantity'],
+      attributes: ['id', 'product_id', 'warehouse_id', 'product_variant_id', 'quantity'],
       raw: true,
       transaction,
     });
 
     const existingMap = new Map(
-      existing.map(e => [`${e.product_id}_${e.warehouse_id}`, e])
+      existing.map(e => [`${e.product_id}_${e.warehouse_id}_${e.product_variant_id}`, e])
     );
 
     const toCreate = [];
     const toUpdate = [];
 
     for (const r of resolved) {
-      const key = `${r.product_id}_${r.warehouse_id}`;
+      const key = `${r.product_id}_${r.warehouse_id}_${r.product_variant_id}`;
       const found = existingMap.get(key);
+
+      console.log("KEY", key);
+      console.log("found", found);
 
       if (found) {
         toUpdate.push({
@@ -2877,6 +2977,7 @@ exports.BulkAddToStock = async (req, res) => {
         toCreate.push({
           company_id: companyId,
           product_id: r.product_id,
+          product_variant_id: r.product_variant_id,
           warehouse_id: r.warehouse_id,
           quantity: r.quantity,
           buffer_size: r.buffer_size,

@@ -749,7 +749,19 @@ exports.getPurchase = async (req, res) => {
             },
             { 
               association: 'batches', 
-              attributes: ['id', 'batch_no', 'manufacture_date', 'expiry_date', 'quantity','receive_or_reject'] 
+              attributes: ['id', 'batch_no', 'manufacture_date', 'expiry_date', 'quantity','receive_or_reject'],
+              include: [
+                {
+                  association: 'productVariant',
+                  attributes: ['id', 'weight_per_unit', 'price_per_unit'],
+                  include: [
+                    {
+                      association: 'masterUOM',
+                      attributes: ['name', 'label'],
+                    }
+                  ]
+                }
+              ]
             },
             {
               association: "ProductsItem",
@@ -2582,7 +2594,6 @@ exports.AddOrUpdateRecv = async (req, res) => {
       attributes: ['id'],
       where: { id: purchaseId, status: { [Op.in]: [4, 5] } },
       raw: true,
-      // include: [{ model: PurchaseProduct, as: "products" }],
     });
 
     if (!purchaseData) {
@@ -2651,10 +2662,29 @@ exports.AddOrUpdateRecv = async (req, res) => {
         if (received > 0 && parseInt(product.available_quantity) >= parseInt(product.received_now)
         ) {
           isanyUpdate = true;
+
+          const productData = await Product.findOne({
+            attributes: ['id', 'product_name', 'unit', 'is_batch_applicable'],
+            where: { id: product.product_id },
+            include: [
+              {
+                association: 'productStockEntries',
+                attributes: ['id', 'quantity', 'inventory_at_transit'],
+                where: { 
+                  warehouse_id: warehouse_id, 
+                  product_variant_id: product?.productVariant?.id 
+                },
+                required: false,
+              },
+            ],
+          });
+
+
           const recievedProduct = await RecvProduct.create(
             {
               bill_id: purchaseRecieve.id,
               product_id: product.product_id,
+              product_variant_id: product?.productVariant?.id || null,
               description: product.description,
               qty: received,
               available_quantity: received,
@@ -2676,36 +2706,27 @@ exports.AddOrUpdateRecv = async (req, res) => {
             { transaction }
           );
 
-          const productData = await Product.findOne({
-            attributes: ['id', 'product_name', 'unit'],
-            where: { id: product.product_id },
-            include: [
-              {
-                association: 'productStockEntries',
-                attributes: ['id', 'quantity', 'inventory_at_transit'],
-                where: { warehouse_id: warehouse_id },
-                required: false,
-              },
-            ],
-          });
+
 
           // when product is received then received quantity is added to the quantity & decrease the inventory_at_transit
-          const productStockEntry = productData.productStockEntries.length > 0 ? productData.productStockEntries[0] : null;
-          if (productStockEntry) {
-            await ProductStockEntry.update({
-              quantity: parseInt(productStockEntry.quantity) + parseInt(received),
-              inventory_at_transit: parseInt(productStockEntry.inventory_at_transit) - parseInt(received),
-            }, { where: { id: productStockEntry.id }, transaction });
-          } else {
-            await ProductStockEntry.create({
-              product_id: product.product_id,
-              product_variant_id: product.variant_id,
-              warehouse_id: warehouse_id,
-              company_id: req.user.company_id,
-              user_id: req.user.id,
-              quantity: received,
-              inventory_at_transit: 0,
-            }, { transaction });
+          if (productData.is_batch_applicable === 0) {
+            const productStockEntry = productData.productStockEntries.length > 0 ? productData.productStockEntries[0] : null;
+            if (productStockEntry) {
+              await ProductStockEntry.update({
+                quantity: parseInt(productStockEntry.quantity) + parseInt(received),
+                inventory_at_transit: parseInt(productStockEntry.inventory_at_transit) - parseInt(received),
+              }, { where: { id: productStockEntry.id }, transaction });
+            } else {
+              await ProductStockEntry.create({
+                product_id: product.product_id,
+                product_variant_id: product?.productVariant?.id,
+                warehouse_id: warehouse_id,
+                company_id: req.user.company_id,
+                user_id: req.user.id,
+                quantity: received,
+                inventory_at_transit: 0,
+              }, { transaction });
+            }
           }
 
           // get the stock in and stock out
@@ -2737,12 +2758,12 @@ exports.AddOrUpdateRecv = async (req, res) => {
             {
               product_id: product.product_id,
               store_id: warehouse_id,
-              item_name: productData?.product_name || "",
+              item_name: product.ProductsItem?.product_name || "",
               default_price: taxExcl || 0,
               quantity_changed: received,
               final_quantity: currentFinalQty,
               comment: `${bill_number} Stock added from purchase entry`,
-              item_unit: productData?.unit || "",
+              item_unit: `${product.productVariant?.weight_per_unit} ${product.productVariant?.masterUOM?.name}`,
               adjustmentType: `${bill_number} Stock added from purchase entry`,
               status_in_out: 1,
               reference_number: referenceNumber,
@@ -2757,12 +2778,42 @@ exports.AddOrUpdateRecv = async (req, res) => {
           // Insert the batches
           if (product.batches.length > 0) {
             const batchPromises = product.batches.map(async (batch) => {
+              // get the product stock entry
+              const productStockEntry = await ProductStockEntry.findOne({
+                attributes: ['id', 'quantity', 'inventory_at_transit'],
+                raw: true,
+                where: {
+                  product_id: product.product_id,
+                  product_variant_id: batch.variant_id,
+                  warehouse_id: warehouse_id,
+                },
+              });
+              // if the product stock entry is not found then create a new one, 
+              // if found then update the quantity and inventory_at_transit
+              if (productStockEntry) {
+                await ProductStockEntry.update({
+                  quantity: parseInt(productStockEntry.quantity) + parseInt(batch.quantity),
+                  inventory_at_transit: parseInt(productStockEntry.inventory_at_transit) - parseInt(batch.quantity),
+                }, { where: { id: productStockEntry.id }, transaction });
+              } else {
+                await ProductStockEntry.create({
+                  product_id: product.product_id,
+                  product_variant_id: batch.variant_id,
+                  warehouse_id: warehouse_id,
+                  company_id: req.user.company_id,
+                  user_id: req.user.id,
+                  quantity: batch.quantity,
+                  inventory_at_transit: 0,
+                }, { transaction });
+              }
+              // insert into receive product batch
               await ReceiveProductBatch.create(
                 {
                   receive_product_id: recievedProduct.id,
                   purchase_product_id: product.id,
                   purchase_id: purchaseId,
                   product_id: product.product_id,
+                  product_variant_id: batch.variant_id,
                   warehouse_id: warehouse_id,
                   bill_id: purchaseRecieve.id,
                   company_id: req.user.company_id,
