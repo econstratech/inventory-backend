@@ -16,6 +16,10 @@ const StockTransferProducts = sequelize.define('StockTransferProducts', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    product_variant_id: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+    },
     transferred_quantity: {
         type: DataTypes.INTEGER,
         allowNull: false,

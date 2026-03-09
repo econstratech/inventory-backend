@@ -221,6 +221,10 @@ ReceiveProductBatch.belongsTo(Product, {
     as: 'product'
 });
 
+ReceiveProductBatch.belongsTo(ProductVariant, {
+    foreignKey: 'product_variant_id',
+    as: 'productVariant'
+});
 ReceiveProductBatch.belongsTo(Purchase, { foreignKey: 'purchase_id', as: 'purchase' });
 ReceiveProductBatch.hasMany(TrackBatchProductLog, { foreignKey: 'receive_product_batch_id', as: 'trackBatchProductLogs' });
 

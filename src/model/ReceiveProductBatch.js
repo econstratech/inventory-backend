@@ -7,6 +7,7 @@ const Warehouse = require("./Warehouse");
 const Product = require("./Product");
 const Purchase = require("./Purchase");
 const PurchaseProduct = require("./PurchaseProduct");
+const ProductVariant = require("./ProductVariant");
 
 
 const ReceiveProductBatch = sequelize.define(
@@ -39,6 +40,14 @@ const ReceiveProductBatch = sequelize.define(
             allowNull: false,
             references: {
                 model: Product,
+                key: 'id'
+            }
+        },
+        product_variant_id: {
+            type: DataTypes.BIGINT,
+            allowNull: false,
+            references: {
+                model: ProductVariant,
                 key: 'id'
             }
         },

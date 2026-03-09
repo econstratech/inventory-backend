@@ -1,5 +1,6 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
+const { ProductVariant, Product } = require("./");
 
 const RecvProduct = sequelize.define(
   "RecvProduct",
@@ -11,7 +12,22 @@ const RecvProduct = sequelize.define(
       autoIncrement: true,
     },
     product_id: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      references: {
+        model: Product,
+        key: 'id'
+      },
+      allowNull: true,
+    },
+    product_variant_id: {
+      type: DataTypes.BIGINT,
+      unsigned: true,
+      allowNull: false,
+      references: {
+        model: ProductVariant,
+        key: 'id'
+      },
       allowNull: true,
     },
     purchase_id: {

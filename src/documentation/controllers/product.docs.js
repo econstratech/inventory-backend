@@ -1114,27 +1114,6 @@
  *                       warehouse_id:
  *                         type: integer
  *                         example: 1
- *                 duplicates:
- *                   type: array
- *                   description: List of duplicate entries
- *                   items:
- *                     type: object
- *                     properties:
- *                       product_id:
- *                         type: integer
- *                         example: 12
- *                       warehouse_id:
- *                         type: integer
- *                         example: 1
- *                       entry_index:
- *                         type: integer
- *                         example: 3
- *                 errors:
- *                   type: array
- *                   description: List of validation errors
- *                   items:
- *                     type: string
- *                     example: "Entry 1: product_id is required"
  *                 missing_products:
  *                   type: array
  *                   description: List of product IDs that do not exist
