@@ -242,11 +242,47 @@
  * @swagger
  * /api/master/product-category:
  *   get:
- *     summary: Get all active Master Product Categories
+ *     summary: Get active product categories (paginated)
+ *     description: Returns active product categories (`status = 1`) for the authenticated user's company. Supports pagination and optional title search using `searchkey`.
  *     tags: [Master]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of records per page
+ *         example: 10
+ *       - in: query
+ *         name: searchkey
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Filter categories by partial title match
+ *         example: "raw"
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           enum: [0, 1]
+ *           default: 1
+ *         description: Filter by category status (use `1` for active categories only)
+ *         example: 1
  *     responses:
- *       '200':
- *         description: List of active Product Categories
+ *       200:
+ *         description: Product categories fetched successfully
  *         content:
  *           application/json:
  *             schema:
@@ -254,33 +290,83 @@
  *               properties:
  *                 status:
  *                   type: boolean
- *                 count:
- *                   type: integer
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Product Categories fetched successfully"
  *                 data:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: integer
- *                       title:
- *                         type: string
- *                       status:
- *                         type: integer
- *                       user_id:
- *                         type: string
- *                       company_id:
- *                         type: string
- *                       created_at:
- *                         type: string
- *                         format: date-time
- *                         example: "2026-01-09T10:00:00.000Z"
- *                       updated_at:
- *                         type: string
- *                         format: date-time
- *                         example: "2026-01-09T10:00:00.000Z"
- *       '500':
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                           example: 25
+ *                         total_pages:
+ *                           type: integer
+ *                           example: 3
+ *                         current_page:
+ *                           type: integer
+ *                           example: 1
+ *                         per_page:
+ *                           type: integer
+ *                           example: 10
+ *                         has_next_page:
+ *                           type: boolean
+ *                           example: true
+ *                         has_prev_page:
+ *                           type: boolean
+ *                           example: false
+ *                         next_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: 2
+ *                         prev_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: null
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 1
+ *                             description: Product category ID
+ *                           title:
+ *                             type: string
+ *                             example: "Raw Material"
+ *                             description: Product category title
+ *                           status:
+ *                             type: integer
+ *                             example: 1
+ *                             description: Active status (1 = active)
+ *                           created_at:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-01-09T10:00:00.000Z"
+ *                           updated_at:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-01-09T10:00:00.000Z"
+ *       500:
  *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to fetch active product categories"
+ *                 error:
+ *                   type: string
+ *                   example: "Error details"
  */
 
 

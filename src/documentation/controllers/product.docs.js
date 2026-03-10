@@ -174,6 +174,11 @@
  *           type: integer
  *         description: Product category ID
  *       - in: query
+ *         name: brand_id
+ *         schema:
+ *           type: integer
+ *         description: Filter products by brand ID
+ *       - in: query
  *         name: searchkey
  *         schema:
  *           type: string
