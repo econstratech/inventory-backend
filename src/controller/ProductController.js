@@ -3573,7 +3573,20 @@ exports.GetProductVariants = async (req, res) => {
         id: productId,
         company_id: companyId
       },
-      raw: true
+      include: [
+        {
+          association: 'masterBrand',
+          attributes: ['id', 'name'],
+        },
+        {
+          association: 'masterProductType',
+          attributes: ['id', 'name'],
+        },
+        {
+          association: 'productCategory',
+          attributes: ['id', 'title'],
+        },
+      ]
     });
 
     // if product not found, return 404
@@ -3625,11 +3638,7 @@ exports.GetProductVariants = async (req, res) => {
       status: true,
       message: "Product variants fetched successfully",
       data: {
-        product: {
-          id: product.id,
-          product_code: product.product_code,
-          product_name: product.product_name
-        },
+        product,
         variants: variants
       }
     });

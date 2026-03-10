@@ -481,13 +481,40 @@
  *                       properties:
  *                         id:
  *                           type: integer
- *                           example: 1
+ *                           example: 4
  *                         product_code:
  *                           type: string
- *                           example: "TRWEE456"
+ *                           example: "PB0002"
  *                         product_name:
  *                           type: string
- *                           example: "Product 002"
+ *                           example: "Asisbad Atta"
+ *                         masterBrand:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 3
+ *                             name:
+ *                               type: string
+ *                               example: "ITC"
+ *                         masterProductType:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 3
+ *                             name:
+ *                               type: string
+ *                               example: "FG MTS"
+ *                         productCategory:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 28514
+ *                             title:
+ *                               type: string
+ *                               example: "RM"
  *                     variants:
  *                       type: array
  *                       items:
@@ -501,11 +528,10 @@
  *                             example: 2
  *                           weight_per_unit:
  *                             type: integer
- *                             example: 300
+ *                             example: 5
  *                           price_per_unit:
- *                             type: number
- *                             format: decimal
- *                             example: 150.50
+ *                             type: string
+ *                             example: "0"
  *                           status:
  *                             type: integer
  *                             example: 1
@@ -529,6 +555,46 @@
  *                               label:
  *                                 type: string
  *                                 example: "kg"
+ *             example:
+ *               status: true
+ *               message: "Product variants fetched successfully"
+ *               data:
+ *                 product:
+ *                   id: 4
+ *                   product_code: "PB0002"
+ *                   product_name: "Asisbad Atta"
+ *                   masterBrand:
+ *                     id: 3
+ *                     name: "ITC"
+ *                   masterProductType:
+ *                     id: 3
+ *                     name: "FG MTS"
+ *                   productCategory:
+ *                     id: 28514
+ *                     title: "RM"
+ *                 variants:
+ *                   - id: 6
+ *                     uom_id: 1
+ *                     weight_per_unit: 5
+ *                     price_per_unit: "0"
+ *                     status: 1
+ *                     created_at: "2026-03-02T12:35:46.000Z"
+ *                     updated_at: "2026-03-02T12:35:46.000Z"
+ *                     masterUOM:
+ *                       id: 1
+ *                       name: "Kilogram"
+ *                       label: "kg"
+ *                   - id: 7
+ *                     uom_id: 1
+ *                     weight_per_unit: 1
+ *                     price_per_unit: "0"
+ *                     status: 1
+ *                     created_at: "2026-03-02T12:35:46.000Z"
+ *                     updated_at: "2026-03-02T12:35:46.000Z"
+ *                     masterUOM:
+ *                       id: 1
+ *                       name: "Kilogram"
+ *                       label: "kg"
  *       404:
  *         description: Product not found
  *         content:

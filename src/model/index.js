@@ -235,6 +235,7 @@ Sale.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 Sale.belongsTo(User, { foreignKey: 'user_id', as: 'createdBy' });
 Sale.hasMany(Purchase, { foreignKey: 'sale_id', as: 'purchases' });
 SalesProduct.belongsTo(Product, { foreignKey: 'product_id', as: 'productData' });
+SalesProduct.belongsTo(ProductVariant, { foreignKey: 'product_variant_id', as: 'productVariant' });
 SalesProduct.belongsTo(Sale, { foreignKey: 'sales_id', as: 'sale' });
 SalesProduct.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 SalesProduct.hasMany(SalesProductReceived, { foreignKey: 'sales_product_id', as: 'sales_product_received' });
