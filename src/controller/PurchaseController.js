@@ -45,7 +45,6 @@ const { GeneralSettings } = require("../model/CompanyModel");
 
 const CommonHelper = require("../helpers/commonHelper");
 
-
 /**
  * Create a new purchase with one or more products
  * @param {*} req 
@@ -2167,16 +2166,38 @@ exports.generatePDFForvendor = async (req, res) => {
         {
           association: 'products',
           attributes: ['id', 'product_id', 'qty', 'unit_price', 'tax', 'taxExcl', 'taxIncl', 'tax_amount'],
-          include: [{ model: Product, as: 'ProductsItem' }],
+          include: [
+            { 
+              association: 'ProductsItem',
+              attributes: [
+                'id',
+                'product_code',
+                'product_name',
+                'sku_product',
+              ],
+              include: [
+                {
+                  association: 'masterBrand',
+                  attributes: ['name'],
+                }
+              ]
+            },
+            {
+              association: 'productVariant',
+              attributes: ['id', 'weight_per_unit', 'price_per_unit'],
+              include: [
+                {
+                  association: 'masterUOM',
+                  attributes: ['name', 'label'],
+                }
+              ]
+            }
+          ],
         },
         { 
           association: 'vendor',
           attributes: ['id', 'vendor_name', 'address', 'phone', 'email', 'gstin'],
         },
-        // { 
-        //   association: 'advance',
-        //   attributes: ['id', 'amount'],
-        // },
       ],
     });
 
@@ -2233,6 +2254,12 @@ exports.generatePDFForvendor = async (req, res) => {
 
     const compileTemplate = handlebars.compile(template);
     const advanceAmount = purchase.advance?.amount ? parseFloat(purchase.advance.amount) : 0;
+    let hasVariant = false;
+    purchase.products.forEach(product => {
+      if (product.productVariant) {
+        hasVariant = true;
+      }
+    });
 
     const data = {
       subtotal: subTotal.toFixed(2),
@@ -2242,11 +2269,18 @@ exports.generatePDFForvendor = async (req, res) => {
       products: purchase.products.map(product => ({
         description: product.ProductsItem.product_name,
         product_code: product.ProductsItem.product_code,
+        brand: product.ProductsItem.masterBrand.name,
         tax: product.tax,
         dateReq: new Date(purchase.expected_arrival).toLocaleString(),
         qty: product.qty,
         unitPrice: parseFloat(product.unit_price).toFixed(2),
         amount: parseFloat(product.taxExcl).toFixed(2),
+        weight_per_unit: `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}`,
+        total_weight: CommonHelper.formatTotalWeight(
+          product.productVariant.weight_per_unit,
+          product.qty,
+          product.productVariant.masterUOM.label
+        ),
       })),
       customer: {
         name: purchase.vendor.vendor_name,
@@ -2272,6 +2306,7 @@ exports.generatePDFForvendor = async (req, res) => {
         // companyAddress: fetchSettings.companyAddress,
         deliveryAddress: fetchSettings.deliveryAddress,
         signature: fetchSettings.signature,
+        hasVariant: hasVariant,
       },
       company: {
         name: Companydetails.company_name,
@@ -2280,6 +2315,8 @@ exports.generatePDFForvendor = async (req, res) => {
         contact: Companydetails.contact_phone,
       }
     };
+
+    console.log("data", data);
 
     // Compile the template
     const html = compileTemplate(data);

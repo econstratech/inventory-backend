@@ -717,7 +717,8 @@ exports.GetAllProducts = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const searchkey = (req.query.searchkey || "").trim();
-    const product_category_id = req.query.product_category_id;
+    const product_category_id = req.query.product_category_id || null;
+    const brand_id = req.query.brand_id || null;
 
     /* -------------------- BASE WHERE -------------------- */
 
@@ -726,8 +727,14 @@ exports.GetAllProducts = async (req, res) => {
       company_id: company_id,
     };
 
+    // if product_category_id is provided then add it to the where clause
     if (product_category_id) {
       where.product_category_id = product_category_id;
+    }
+
+    // if brand_id is provided then add it to the where clause
+    if (brand_id) {
+      where.brand_id = brand_id;
     }
 
     /* -------------------- SEARCH -------------------- */
@@ -1021,16 +1028,14 @@ exports.GetAllProductsbyStore = async (req, res) => {
         }
       ]
     });
-    // console.log("products", products);
-
     
     // Get paginated data
     const paginatedProductData = CommonHelper.paginate(products, page, limit);
 
     // return response
-    return res.status(200).json({ message: true, data: paginatedProductData });
+    return res.status(200).json({ message: 'Products fetched successfully', data: paginatedProductData });
   } catch (err) {
-    return res.status(400).json({ message: false, error: err.message });
+    return res.status(400).json({ message: 'Error fetching products', error: err.message });
   }
 };
 

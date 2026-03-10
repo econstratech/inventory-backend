@@ -142,9 +142,11 @@
 
         <div class="invoice-title">
             <h1>INVOICE</h1>
-            <div><strong>No:</strong> {{otherInfo.refnumber}}</div>
+            <div><strong>Reference No:</strong> {{otherInfo.refnumber}}</div>
             <div><strong>Date:</strong> {{otherInfo.today}}</div>
-            <div><strong>Payment Terms:</strong> {{otherInfo.payment_terms}}</div>
+            {{#if otherInfo.payment_terms}}
+              <div><strong>Payment Terms:</strong> {{otherInfo.payment_terms}}</div>
+            {{/if}}
         </div>
     </div>
 
@@ -172,10 +174,17 @@
         <table>
             <thead>
                 <tr>
-                    <th>Description</th>
+                    <th>Item</th>
+                    <th>Brand</th>
+                    {{#if otherInfo.hasVariant}}
+                      <th>Weight Per Unit</th>
+                    {{/if}}
                     <th>Tax %</th>
                     <!-- <th>Date Req.</th> -->
                     <th class="text-right">Qty</th>
+                    {{#if otherInfo.hasVariant}}
+                      <th>Total Weight</th>
+                    {{/if}}
                     <th class="text-right">Unit Price</th>
                     <th class="text-right">Amount</th>
                 </tr>
@@ -184,9 +193,16 @@
                 {{#products}}
                 <tr>
                     <td>{{description}}</td>
+                    <td>{{brand}}</td>
+                    {{#if weight_per_unit}}
+                      <td>{{weight_per_unit}}</td>
+                    {{/if}}
                     <td>{{tax}}</td>
                     <!-- <td>{{expected_delivery_date}}</td> -->
                     <td class="text-right">{{qty}}</td>
+                    {{#if total_weight}}
+                      <td class="text-right">{{total_weight}}</td>
+                    {{/if}}
                     <td class="text-right">₹ {{unitPrice}}</td>
                     <td class="text-right">₹ {{amount}}</td>
                 </tr>

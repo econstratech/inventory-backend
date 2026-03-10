@@ -6,6 +6,7 @@ const {
     ProductCategory,
     MasterBrand
 } = require('../model');
+const CommonHelper = require("../helpers/commonHelper");
 
 /**
  * Create a new Master UOM record
@@ -339,19 +340,43 @@ exports.GetActiveMasterAttribute = async (req, res) => {
  */
 exports.GetActiveMasterProductCategory = async (req, res) => {
     try {
-        const productCategories = await ProductCategory.findAll({
+        // pagination params
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
+        // base where
+        const where = {
+            company_id: req.user.company_id
+        };
+
+        // if searchkey is provided then add it to the where clause
+        if (req.query.searchkey) {
+            where.title = { [Op.like]: `%${req.query.searchkey.trim()}%` };
+        }
+        // if status is provided then add it to the where clause
+        if (req.query.status) {
+            where.status = req.query.status;
+        }
+
+        // get list of all active product categories
+        const productCategories = await ProductCategory.findAndCountAll({
             attributes: ['id', 'title', 'status', 'created_at', 'updated_at'],
-            where: { 
-                status: 1, 
-                company_id: req.user.company_id 
-            },
+            where,
             order: [['title', 'ASC']],
-            raw: true
+            distinct: true,
+            raw: true,
+            limit,
+            offset,
         });
+
+        // Get paginated data
+        const paginatedProductCategoryData = CommonHelper.paginate(productCategories, page, limit);
+
+        // return response
         return res.status(200).json({
             status: true,
             message: "Product Categories fetched successfully",
-            data: productCategories
+            data: paginatedProductCategoryData
         });
     } catch (error) {
         console.error('Error fetching active product categories:', error);
