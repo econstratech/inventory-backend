@@ -2316,8 +2316,6 @@ exports.generatePDFForvendor = async (req, res) => {
       }
     };
 
-    console.log("data", data);
-
     // Compile the template
     const html = compileTemplate(data);
 

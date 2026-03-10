@@ -10,16 +10,17 @@ const SalesProduct = sequelize.define(
             allowNull: true,
             unique: false
         },
-       
         product_id: {
             type: DataTypes.INTEGER,
             allowNull: true,
-           
+        },
+        product_variant_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
         },
         description: {
             type: DataTypes.STRING,
             allowNull: true,
-           
         },
         qty: {
             type: DataTypes.INTEGER,

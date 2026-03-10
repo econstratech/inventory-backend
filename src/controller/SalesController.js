@@ -97,6 +97,7 @@ exports.AddSellQuotation = async (req, res) => {
           {
             sales_id: sellQuotationData.id,
             product_id: product.product_id,
+            product_variant_id: product.variant_id,
             customer_id: req.body.customer_id,
             warehouse_id: req.body.warehouse_id,
             description: product.description,
@@ -328,28 +329,14 @@ exports.updateSalesQuotation = async (req, res) => {
         customer_id: req.body.customer_id,
         expected_delivery_date: req.body.expected_delivery_date,
         warehouse_id: req.body.warehouse_id,
-        // vendor_reference: req.body.vendor_reference,
-        // order_dateline: req.body.order_dateline,
-        // expected_arrival: req.body.expected_arrival,
-        // buyer: req.body.buyer,
-        // source_document: req.body.source_document,
         payment_terms: req.body.payment_terms,
-        // total_amount: req.body.total_amount,
-        // untaxed_amount: req.body.untaxed_amount,
         user_id: req.user.id,
-        // company_id: req.user.company_id,
       },
       {
         where: { id },
         transaction,
       }
     );
-
-    // Delete existing SalesProducts for this Purchase
-    // await SalesProduct.destroy({
-    //   where: { sales_id: id },
-    //   transaction,
-    // });
 
     let totalSaleAmount = 0;
     let untaxedAmount = 0;
@@ -370,6 +357,8 @@ exports.updateSalesQuotation = async (req, res) => {
           // Update SalesProduct record
           await SalesProduct.update(
             {
+              product_id: product.product_id,
+              product_variant_id: product.product_variant_id,
               qty: product.qty,
               unit_price: product.unit_price,
               tax: product.tax,
@@ -389,6 +378,7 @@ exports.updateSalesQuotation = async (req, res) => {
               {
                 sales_id: id,
                 product_id: product.product_id,
+                product_variant_id: product.product_variant_id,
                 warehouse_id: req.body.warehouse_id,
                 description: product.description,
                 qty: product.qty,
@@ -762,10 +752,6 @@ exports.getSalesQuotation = async (req, res) => {
 
     const relationsWithIndividualProduct = [
       {
-        association: 'masterUOM',
-        attributes: ['id', 'name', 'label'],
-      },
-      {
         association: 'productCategory',
         attributes: ['id', 'title'],
       },
@@ -778,6 +764,28 @@ exports.getSalesQuotation = async (req, res) => {
             attributes: ['id', 'name', 'is_required'],
           }
         ]
+      },
+      {
+        association: 'productVariants',
+        attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
+        include: [
+          {
+            association: 'masterUOM',
+            attributes: ['id', 'name', 'label'],
+          }
+        ]
+      },
+      {
+        association: 'masterBrand',
+        attributes: ['id', 'name'],
+      },
+      {
+        association: 'masterProductType',
+        attributes: ['id', 'name'],
+      },
+      {
+        association: 'productCategory',
+        attributes: ['id', 'title'],
       }
     ];
 
@@ -820,6 +828,16 @@ exports.getSalesQuotation = async (req, res) => {
             include: [
               ...(type !== 'dispatch' ? relationsWithIndividualProduct : [])
             ]
+          },
+          {
+            association: 'productVariant',
+            attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
+            include: [
+              {
+                association: 'masterUOM',
+                attributes: ['id', 'name', 'label'],
+              }
+            ]
           }
         ],
       },
@@ -830,10 +848,19 @@ exports.getSalesQuotation = async (req, res) => {
       { 
         association: "warehouse",
         attributes: ['id', 'name'],
-      },
+      }
     ];
 
-    const attributes = ['id', 'reference_number', 'expected_delivery_date', 'payment_terms', 'total_amount', 'is_parent', 'status', 'created_at'];
+    const attributes = [
+      'id', 
+      'reference_number', 
+      'expected_delivery_date', 
+      'payment_terms', 
+      'total_amount', 
+      'is_parent', 
+      'status', 
+      'created_at'
+    ];
 
     // get the sales quotation data
     const salesQuotationData = await Sale.findOne({
@@ -2119,14 +2146,29 @@ exports.generatePDFForvendor = async (req, res) => {
             { 
               association: 'productData',
               attributes: ['id', 'product_name', 'product_code'],
+              include: [
+                {
+                  association: 'masterBrand',
+                  attributes: ['id', 'name'],
+                }
+              ]
+            },
+            {
+              association: 'productVariant',
+              attributes: ['id', 'weight_per_unit'],
+              include: [
+                {
+                  association: 'masterUOM',
+                  attributes: ['id', 'name', 'label'],
+                }
+              ]
             }
           ],
         },
         { 
           association: "customer",
           attributes: ['id', 'name', 'address', 'phone', 'email']
-        },
-        // { model: AdvancePayment, as: "advance" },
+        }
       ],
     });
 
@@ -2179,6 +2221,9 @@ exports.generatePDFForvendor = async (req, res) => {
     // const advanceAmount = salesOrder.advance?.amount || 0;
     // Prepare data for the template
     const grandTotalNum = Number(grandTotal) || 0;
+    const hasVariant = salesOrder.products.some(product => product.productVariant);
+
+    // Prepare data for the template
     const data = {
       subtotal: subTotal.toFixed(2),
       total_tax: totalTax.toFixed(2),
@@ -2187,11 +2232,18 @@ exports.generatePDFForvendor = async (req, res) => {
       products: salesOrder.products.map(product => ({
         description: product.productData?.product_name || "",
         product_code: product.productData?.product_code || "",
+        brand: product.productData?.masterBrand.name || "",
         tax: product.tax,
         dateReq: moment(salesOrder.expected_delivery_date).format('DD/MM/YYYY'),
         qty: product.qty,
         unitPrice: parseFloat(product.unit_price).toFixed(2),
         amount: parseFloat(product.taxExcl).toFixed(2),
+        weight_per_unit: `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}`,
+        total_weight: CommonHelper.formatTotalWeight(
+          product.productVariant.weight_per_unit,
+          product.qty,
+          product.productVariant.masterUOM.label
+        ),
       })),
       customer: {
         name: customer?.name || "",
@@ -2206,6 +2258,7 @@ exports.generatePDFForvendor = async (req, res) => {
         // website: customer?.website || "",
       },
       otherInfo: {
+        hasVariant: hasVariant,
         refnumber: salesOrder.reference_number,
         UntaxedAmount: parseFloat(salesOrder.untaxed_amount).toFixed(2),
         total_amount: parseFloat(salesOrder.total_amount).toFixed(2),
