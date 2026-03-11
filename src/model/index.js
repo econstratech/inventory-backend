@@ -1,5 +1,8 @@
 const User = require('./User');
 const Company = require('./Company');
+const Module = require('./Module');
+const Role = require('./Role');
+const Permission = require('./Permission');
 const Warehouse = require('./Warehouse');
 const ProductAttribute = require('./ProductAttribute')
 const ProductAttributeValue = require('./ProductAttributeValue')
@@ -38,6 +41,7 @@ const TrackBatchProductLog = require('./TrackBatchProductLog');
 const StockTransferBatch = require('./StockTransferBatch');
 const { GeneralSettings, CompanyModel } = require('./CompanyModel');
 const ProductVariant = require('./ProductVariant');
+const ServiceAuditLog = require('./ServiceAuditLog');
 
 User.belongsTo(CompanyModel, {
     foreignKey: 'company_id',
@@ -337,7 +341,13 @@ StockTransferBatch.belongsTo(StockTransferLog, { foreignKey: 'stock_transfer_log
 StockTransferBatch.belongsTo(StockTransferProducts, { foreignKey: 'stock_transfer_product_id', as: 'stockTransferProduct' });
 StockTransferBatch.belongsTo(ReceiveProductBatch, { foreignKey: 'receive_product_batch_id', as: 'receiveProductBatch' });
 
-module.exports = { 
+ServiceAuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+ServiceAuditLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+
+module.exports = {
+    Module,
+    Role,
+    Permission,
     User,
     Customer,
     Company,
@@ -375,4 +385,5 @@ module.exports = {
     CompanyModel,
     GeneralSettings,
     ProductVariant,
+    ServiceAuditLog,
 };

@@ -30,8 +30,8 @@ const {
     getTopItems, 
     getInventoryOverview, 
     generateProductReport, 
-    GetLowQtyProducts, 
-    GetOverStockProducts, 
+    // GetLowQtyProducts, 
+    // GetOverStockProducts, 
     AddToStock,
     BulkAddToStock,
     GetStockEntries,
@@ -93,8 +93,8 @@ router.get("/inventory/overview",authToken,getInventoryOverview);
 
 router.post("/generate-report", authToken, generateProductReport);
 
-router.get("/low-quantity-products", GetLowQtyProducts);
-router.get("/over-stock-products", GetOverStockProducts);
+// router.get("/low-quantity-products", GetLowQtyProducts);
+// router.get("/over-stock-products", GetOverStockProducts);
 router.get("/store-wise-stock/:id", authToken, GetStoreWiseStock);
 
 module.exports = router;

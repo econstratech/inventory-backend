@@ -2230,224 +2230,224 @@ exports.getInventoryOverview = async (req, res) => {
 
 // api for low qty alert -------------------------------------------------------------------
 
-exports.GetLowQtyProducts = async (req, res) => {
-  try {
-    const getAllProduct = await Product.findAll({
-      where: { status: 1 },
-      order: [["id", "DESC"]],
-      include: [
-        { model: MasteruomModel, as: "Masteruom", attributes: ["unit_name"] },
-        {
-          model: TrackProductStock,
-          as: "TrackProductStock",
-          attributes: ["store_id", "quantity_changed", "status_in_out"],
-        },
-      ],
-    });
+// exports.GetLowQtyProducts = async (req, res) => {
+//   try {
+//     const getAllProduct = await Product.findAll({
+//       where: { status: 1 },
+//       order: [["id", "DESC"]],
+//       include: [
+//         { model: MasteruomModel, as: "Masteruom", attributes: ["unit_name"] },
+//         {
+//           model: TrackProductStock,
+//           as: "TrackProductStock",
+//           attributes: ["store_id", "quantity_changed", "status_in_out"],
+//         },
+//       ],
+//     });
 
-    // Group low stock products by company_id
-    const companyLowStockMap = {};
+//     // Group low stock products by company_id
+//     const companyLowStockMap = {};
 
-    for (const product of getAllProduct) {
-      const productData = product.toJSON();
+//     for (const product of getAllProduct) {
+//       const productData = product.toJSON();
 
-      let stockIn = 0, stockOut = 0;
+//       let stockIn = 0, stockOut = 0;
 
-      productData.TrackProductStock.forEach((entry) => {
-        const qty = parseFloat(entry.quantity_changed || 0);
-        if (entry.status_in_out === 1) stockIn += qty;
-        else stockOut += qty;
-      });
+//       productData.TrackProductStock.forEach((entry) => {
+//         const qty = parseFloat(entry.quantity_changed || 0);
+//         if (entry.status_in_out === 1) stockIn += qty;
+//         else stockOut += qty;
+//       });
 
-      const currentStock = stockIn - stockOut;
-      const minStock = parseFloat(productData.minimum_stock_level || 0);
+//       const currentStock = stockIn - stockOut;
+//       const minStock = parseFloat(productData.minimum_stock_level || 0);
 
-      if (currentStock < minStock) {
-        if (!companyLowStockMap[productData.company_id]) {
-          companyLowStockMap[productData.company_id] = {
-            products: [],
-          };
-        }
+//       if (currentStock < minStock) {
+//         if (!companyLowStockMap[productData.company_id]) {
+//           companyLowStockMap[productData.company_id] = {
+//             products: [],
+//           };
+//         }
 
-        companyLowStockMap[productData.company_id].products.push({
-          product_name: productData.product_name,
-          current_stock: currentStock,
-          minimum_stock_level: minStock,
-        });
-      }
-    }
+//         companyLowStockMap[productData.company_id].products.push({
+//           product_name: productData.product_name,
+//           current_stock: currentStock,
+//           minimum_stock_level: minStock,
+//         });
+//       }
+//     }
 
-    const sentMessages = [];
+//     const sentMessages = [];
 
-    // Loop through companies that have low stock products
-    for (const companyId in companyLowStockMap) {
-      const companyDetails = await Company.findOne({
-        where: { id: companyId },
-        attributes: ["company_name", "whatsapp_number", "p_isd"]
-      });
+//     // Loop through companies that have low stock products
+//     for (const companyId in companyLowStockMap) {
+//       const companyDetails = await Company.findOne({
+//         where: { id: companyId },
+//         attributes: ["company_name", "whatsapp_number", "p_isd"]
+//       });
 
-      const whatsappConfig = await GeneralSettings.findOne({
-        where: { company_id: companyId, is_active: 1 },
-        attributes: ["gupshup_token", "gupshup_phone"]
-      });
+//       const whatsappConfig = await GeneralSettings.findOne({
+//         where: { company_id: companyId, is_active: 1 },
+//         attributes: ["gupshup_token", "gupshup_phone"]
+//       });
 
-      if (!companyDetails?.whatsapp_number || !whatsappConfig?.gupshup_token || !whatsappConfig?.gupshup_phone) {
-        // console.log(`⚠️ Skipping company ${companyId} due to missing WhatsApp config.`);
-        continue;
-      }
+//       if (!companyDetails?.whatsapp_number || !whatsappConfig?.gupshup_token || !whatsappConfig?.gupshup_phone) {
+//         // console.log(`⚠️ Skipping company ${companyId} due to missing WhatsApp config.`);
+//         continue;
+//       }
 
-      const lowStockList = companyLowStockMap[companyId].products;
-      const totalLowStock = lowStockList.length;
+//       const lowStockList = companyLowStockMap[companyId].products;
+//       const totalLowStock = lowStockList.length;
 
-      const productSummary = lowStockList.map((p, idx) =>
-        `${idx + 1}) ${p.product_name} [C:${p.current_stock}, M:${p.minimum_stock_level}]`
-      ).join(' | '); // Avoid line breaks for WhatsApp template compatibility
+//       const productSummary = lowStockList.map((p, idx) =>
+//         `${idx + 1}) ${p.product_name} [C:${p.current_stock}, M:${p.minimum_stock_level}]`
+//       ).join(' | '); // Avoid line breaks for WhatsApp template compatibility
 
-      const templateParams = [
-        companyDetails.company_name,                                   // {{1}} Company Name
-        `${totalLowStock} product${totalLowStock > 1 ? 's' : ''}`,     // {{2}} Count
-        productSummary,                                                 // {{3}} Product list
-      ];
+//       const templateParams = [
+//         companyDetails.company_name,                                   // {{1}} Company Name
+//         `${totalLowStock} product${totalLowStock > 1 ? 's' : ''}`,     // {{2}} Count
+//         productSummary,                                                 // {{3}} Product list
+//       ];
 
-      // Send WhatsApp via GupShup
-      await GupShupMessage(
-        companyDetails.p_isd || "91",                                  // ISD
-        companyDetails.whatsapp_number,
-        whatsappConfig.gupshup_token,
-        whatsappConfig.gupshup_phone,
-        "ad66535c-ded4-484b-b1b7-372c576deba6",                         // Your approved 5-var template ID
-        templateParams
-      );
+//       // Send WhatsApp via GupShup
+//       await GupShupMessage(
+//         companyDetails.p_isd || "91",                                  // ISD
+//         companyDetails.whatsapp_number,
+//         whatsappConfig.gupshup_token,
+//         whatsappConfig.gupshup_phone,
+//         "ad66535c-ded4-484b-b1b7-372c576deba6",                         // Your approved 5-var template ID
+//         templateParams
+//       );
 
-      sentMessages.push({
-        company_name: companyDetails.company_name,
-        whatsapp_number: companyDetails.whatsapp_number,
-        total_low_stock: totalLowStock,
-        products: lowStockList,
-      });
-    }
+//       sentMessages.push({
+//         company_name: companyDetails.company_name,
+//         whatsapp_number: companyDetails.whatsapp_number,
+//         total_low_stock: totalLowStock,
+//         products: lowStockList,
+//       });
+//     }
 
-    return res.status(200).json({
-      message: true,
-      companies_notified: sentMessages.length,
-      details: sentMessages
-    });
+//     return res.status(200).json({
+//       message: true,
+//       companies_notified: sentMessages.length,
+//       details: sentMessages
+//     });
 
-  } catch (err) {
-    console.error("Low stock error:", err);
-    return res.status(400).json({ error: err.message });
-  }
-};
+//   } catch (err) {
+//     console.error("Low stock error:", err);
+//     return res.status(400).json({ error: err.message });
+//   }
+// };
 
 
-exports.GetOverStockProducts = async (req, res) => {
-  try {
-    const getAllProduct = await Product.findAll({
-      where: { status: 1 },
-      order: [["id", "DESC"]],
-      include: [
-        { 
-          association: "masterUOM", 
-          attributes: ["name"]
-        },
-        {
-          model: TrackProductStock,
-          as: "TrackProductStock",
-          attributes: ["store_id", "quantity_changed", "status_in_out"],
-        },
-      ],
-    });
+// exports.GetOverStockProducts = async (req, res) => {
+//   try {
+//     const getAllProduct = await Product.findAll({
+//       where: { status: 1 },
+//       order: [["id", "DESC"]],
+//       include: [
+//         { 
+//           association: "masterUOM", 
+//           attributes: ["name"]
+//         },
+//         {
+//           model: TrackProductStock,
+//           as: "TrackProductStock",
+//           attributes: ["store_id", "quantity_changed", "status_in_out"],
+//         },
+//       ],
+//     });
 
-    const companyOverStockMap = {};
+//     const companyOverStockMap = {};
 
-    for (const product of getAllProduct) {
-      const productData = product.toJSON();
+//     for (const product of getAllProduct) {
+//       const productData = product.toJSON();
 
-      let stockIn = 0, stockOut = 0;
+//       let stockIn = 0, stockOut = 0;
 
-      productData.TrackProductStock.forEach((entry) => {
-        const qty = parseFloat(entry.quantity_changed || 0);
-        if (entry.status_in_out === 1) stockIn += qty;
-        else stockOut += qty;
-      });
+//       productData.TrackProductStock.forEach((entry) => {
+//         const qty = parseFloat(entry.quantity_changed || 0);
+//         if (entry.status_in_out === 1) stockIn += qty;
+//         else stockOut += qty;
+//       });
 
-      const currentStock = stockIn - stockOut;
-      const maxStock = parseFloat(productData.maximum_stock_level || 0);
+//       const currentStock = stockIn - stockOut;
+//       const maxStock = parseFloat(productData.maximum_stock_level || 0);
 
-      if (maxStock && currentStock > maxStock) {
-        if (!companyOverStockMap[productData.company_id]) {
-          companyOverStockMap[productData.company_id] = {
-            products: [],
-          };
-        }
+//       if (maxStock && currentStock > maxStock) {
+//         if (!companyOverStockMap[productData.company_id]) {
+//           companyOverStockMap[productData.company_id] = {
+//             products: [],
+//           };
+//         }
 
-        companyOverStockMap[productData.company_id].products.push({
-          product_name: productData.product_name,
-          current_stock: currentStock,
-          maximum_stock_level: maxStock,
-        });
-      }
-    }
+//         companyOverStockMap[productData.company_id].products.push({
+//           product_name: productData.product_name,
+//           current_stock: currentStock,
+//           maximum_stock_level: maxStock,
+//         });
+//       }
+//     }
 
-    const sentMessages = [];
+//     const sentMessages = [];
 
-    for (const companyId in companyOverStockMap) {
-      const companyDetails = await Company.findOne({
-        where: { id: companyId },
-        attributes: ["company_name", "whatsapp_number", "p_isd"]
-      });
+//     for (const companyId in companyOverStockMap) {
+//       const companyDetails = await Company.findOne({
+//         where: { id: companyId },
+//         attributes: ["company_name", "whatsapp_number", "p_isd"]
+//       });
 
-      const whatsappConfig = await GeneralSettings.findOne({
-        where: { company_id: companyId, is_active: 1 },
-        attributes: ["gupshup_token", "gupshup_phone"]
-      });
+//       const whatsappConfig = await GeneralSettings.findOne({
+//         where: { company_id: companyId, is_active: 1 },
+//         attributes: ["gupshup_token", "gupshup_phone"]
+//       });
 
-      if (!companyDetails?.whatsapp_number || !whatsappConfig?.gupshup_token || !whatsappConfig?.gupshup_phone) {
-        // console.log(`⚠️ Skipping company ${companyId} due to missing or inactive WhatsApp config.`);
-        continue;
-      }
+//       if (!companyDetails?.whatsapp_number || !whatsappConfig?.gupshup_token || !whatsappConfig?.gupshup_phone) {
+//         // console.log(`⚠️ Skipping company ${companyId} due to missing or inactive WhatsApp config.`);
+//         continue;
+//       }
 
-      const overStockList = companyOverStockMap[companyId].products;
-      const totalOverStock = overStockList.length;
+//       const overStockList = companyOverStockMap[companyId].products;
+//       const totalOverStock = overStockList.length;
 
-      const productSummary = overStockList.map((p, idx) =>
-        `${idx + 1}) ${p.product_name} [C:${p.current_stock}, M:${p.maximum_stock_level}]`
-      ).join(' | ');
+//       const productSummary = overStockList.map((p, idx) =>
+//         `${idx + 1}) ${p.product_name} [C:${p.current_stock}, M:${p.maximum_stock_level}]`
+//       ).join(' | ');
 
-      const templateParams = [
-        companyDetails.company_name,                                      // {{1}}
-        `${totalOverStock} product${totalOverStock > 1 ? 's' : ''}`,      // {{2}}
-        productSummary,                                                   // {{3}}                           
-      ];
+//       const templateParams = [
+//         companyDetails.company_name,                                      // {{1}}
+//         `${totalOverStock} product${totalOverStock > 1 ? 's' : ''}`,      // {{2}}
+//         productSummary,                                                   // {{3}}                           
+//       ];
 
-      await GupShupMessage(
-        companyDetails.p_isd || "91",
-        companyDetails.whatsapp_number,
-        whatsappConfig.gupshup_token,
-        whatsappConfig.gupshup_phone,
-        "c626d7aa-f02a-457c-920d-1e3af84cc463",                           // Template ID
-        templateParams
-      );
+//       await GupShupMessage(
+//         companyDetails.p_isd || "91",
+//         companyDetails.whatsapp_number,
+//         whatsappConfig.gupshup_token,
+//         whatsappConfig.gupshup_phone,
+//         "c626d7aa-f02a-457c-920d-1e3af84cc463",                           // Template ID
+//         templateParams
+//       );
 
-      sentMessages.push({
-        company_name: companyDetails.company_name,
-        whatsapp_number: companyDetails.whatsapp_number,
-        total_over_stock: totalOverStock,
-        products: overStockList,
-      });
-    }
+//       sentMessages.push({
+//         company_name: companyDetails.company_name,
+//         whatsapp_number: companyDetails.whatsapp_number,
+//         total_over_stock: totalOverStock,
+//         products: overStockList,
+//       });
+//     }
 
-    return res.status(200).json({
-      message: true,
-      companies_notified: sentMessages.length,
-      details: sentMessages
-    });
+//     return res.status(200).json({
+//       message: true,
+//       companies_notified: sentMessages.length,
+//       details: sentMessages
+//     });
 
-  } catch (err) {
-    console.error("Overstock error:", err);
-    return res.status(400).json({ error: err.message });
-  }
-};
+//   } catch (err) {
+//     console.error("Overstock error:", err);
+//     return res.status(400).json({ error: err.message });
+//   }
+// };
 
 
 
