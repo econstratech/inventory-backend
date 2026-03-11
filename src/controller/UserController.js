@@ -1,12 +1,13 @@
 const Joi = require('joi');
 const bcrypt = require('bcrypt');
 const { Op } = require('sequelize');
-const User = require('../model/User');
-const { GeneralSettings } = require('../model/CompanyModel');
-const Role = require('../model/Role');
-const Permission = require('../model/Permission');
-const Module = require('../model/Module');
-
+const jwt = require('jsonwebtoken');
+const {
+    User, 
+    ServiceAuditLog, 
+    Role, 
+    Module
+} = require('../model');
 
 exports.Register = async (req, res) => {
     try {
@@ -173,45 +174,11 @@ exports.Login = async (req, res) => {
             });
         }
 
-        //get permissions for the user
-        const roles = JSON.parse(user.role);
-
-        let permissions = [];
-        //get role details
-        const roleDetails = await Role.findAll({
-            attributes: ['id'],
-            where: {
-                id: { [Op.in]: roles },
-            },
-            raw: true,
-            nest: true,
-            include: [{
-                association: 'permissions',
-                attributes: ['id', 'name', 'module'],
-                through: { attributes: [] },
-            }]
-        });
-    
-        let userModuleIds = [];
-        roleDetails.forEach((userRole) => {
-            permissions.push(userRole.permissions.name);
-            userModuleIds.push(userRole.permissions.module);
-        });
-        // Unique module IDs
-        userModuleIds = [...new Set(userModuleIds)];
-        const userModules = await Module.findAll({
-            attributes: ['id', 'name'],
-            raw: true,
-            where: {
-                id: { [Op.in]: userModuleIds }
-            }
-        });
-    
-        userModules.forEach((mod) => {
-            permissions.push(mod.name);
-        });
-    
-        const permissionsList = [...new Set(permissions)];
+        // get user permission list
+        let permissionsList = [];
+        if (user.role) {
+            permissionsList = await getUserPermissionList(user);
+        }
 
         // Generate token
         const token = await User.generateToken({
@@ -251,6 +218,54 @@ exports.Login = async (req, res) => {
     }
 };
 
+/**
+ * Get user permission list
+ * @param {object} user - The user object
+ * @returns {Promise<array>} - The permission list
+ */
+const getUserPermissionList = async (user) => {
+    //get permissions for the user
+    const roles = JSON.parse(user.role);
+
+    let permissions = [];
+    //get role details
+    const roleDetails = await Role.findAll({
+        attributes: ['id'],
+        where: {
+            id: { [Op.in]: roles },
+        },
+        raw: true,
+        nest: true,
+        include: [{
+            association: 'permissions',
+            attributes: ['id', 'name', 'module'],
+            through: { attributes: [] },
+        }]
+    });
+
+    let userModuleIds = [];
+    roleDetails.forEach((userRole) => {
+        permissions.push(userRole.permissions.name);
+        userModuleIds.push(userRole.permissions.module);
+    });
+    // Unique module IDs
+    userModuleIds = [...new Set(userModuleIds)];
+    const userModules = await Module.findAll({
+        attributes: ['id', 'name'],
+        raw: true,
+        where: {
+            id: { [Op.in]: userModuleIds }
+        }
+    });
+
+    userModules.forEach((mod) => {
+        permissions.push(mod.name);
+    });
+
+    const permissionsList = [...new Set(permissions)];
+
+    return permissionsList;
+}
 
 exports.GetAllUser = async (req, res) => {
     try {
@@ -534,6 +549,129 @@ exports.ValidateUser = async (req, res) => {
             status: false, 
             message: "Error validating user", 
             error: error.message 
+        });
+    }
+};
+
+/**
+ * Validate third-party user token
+ * @param {object} req - The request object
+ * @param {object} req.body - The request body
+ * @param {string} req.body.token - JWT token to decode
+ * @param {object} res - The response object
+ * @returns {Promise<void>}
+ */
+exports.ValidateThirdPartyUser = async (req, res) => {
+    try {
+        // get token from the request body
+        const { token_hash: token } = req.body;
+
+        // validate token hash
+        if (!token || typeof token !== 'string') {
+            return res.status(400).json({
+                status: false,
+                message: "Token is required"
+            });
+        }
+
+        // Get user details from the decoded token
+        const decoded = jwt.decode(token);
+        // throw error if token is invalid
+        if (!decoded) {
+            return res.status(400).json({
+                status: false,
+                message: "Invalid token"
+            });
+        }
+
+        // get user id of the third-party system from the decoded token
+        const bms_user_id = decoded.id;
+        // get user details
+        const user = await User.findOne({
+            attributes: ['id', 'status', 'company_id', 'role'],
+            where: {
+                bms_user_id: bms_user_id,
+                status: 1,
+            },
+            include: [
+                {
+                    association: 'company',
+                    attributes: [ 'id', 'company_name' ],
+                    include: [
+                        {
+                            association: 'generalSettings',
+                            attributes: [ 
+                                'timezone', 
+                                'symbol', 
+                                'currency_name', 
+                                'currency_code', 
+                                'min_purchase_amount',
+                                'min_sale_amount' 
+                            ],
+                        }
+                    ]
+                }
+            ]
+        });
+        // throw error if user not found
+        if (!user) {
+            return res.status(400).json({
+                status: false,
+                message: "User not found"
+            });
+        }
+
+        // create service audit log
+        await ServiceAuditLog.create({
+            ...req.body,
+            service_request: req.body,
+            service_response: decoded,
+            user_id: user.id,
+            company_id: user.company_id
+        });
+
+        // get user permission list
+        let permissionsList = [];
+        if (user.role) {
+            permissionsList = await getUserPermissionList(user);
+        }
+
+        // Generate token
+        const newToken = await User.generateToken({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            company_id: user.company_id,
+            timezone: user.company.generalSettings.timezone,
+            currency_symbol: user.company.generalSettings.symbol,
+            currency_name: user.company.generalSettings.currency_name,
+            currency_code: user.company.generalSettings.currency_code,
+            position: user.position,
+        });
+
+        // Update user's remember token
+        await User.update({ remember_token: newToken }, {
+            where: {
+                id: user.id
+            }
+        });
+
+        // return the response
+        return res.status(200).json({
+            status: true,
+            message: "Token is validated & logged in successfully",
+            data: {
+                user: user,
+                tokenData: decoded,
+                permissions: permissionsList
+            }
+        });
+    } catch (error) {
+        console.error("Validate third-party user token error:", error);
+        return res.status(500).json({
+            status: false,
+            message: "Error validating third-party user token",
+            error: error.message
         });
     }
 };

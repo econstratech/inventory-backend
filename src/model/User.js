@@ -97,7 +97,11 @@ const User = sequelize.define(
 // });
 
 User.generateToken = function ({ id, name, email,company_id, timezone, currency_code, currency_symbol, currency_name,position }) {
-    const token = jwt.sign({ id, name, email,company_id, timezone, currency_code, currency_symbol, currency_name ,position }, process.env.JWT_TOKEN, { expiresIn: '24h' });
+    const token = jwt.sign(
+        { id, name, email,company_id, timezone, currency_code, currency_symbol, currency_name ,position }, 
+        process.env.JWT_TOKEN, 
+        { expiresIn: process.env.JWT_TOKEN_EXPIRATION_TIME || '24h' }
+    );
     return token;
 };
 User.validateUser = (user) => {

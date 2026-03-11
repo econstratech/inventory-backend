@@ -420,3 +420,102 @@
  *                   type: string
  *                   example: "Database connection error"
  */
+
+/**
+ * @swagger
+ * /api/user/validate-third-party-user:
+ *   post:
+ *     summary: Validate third-party user by JWT token
+ *     description: Decodes `token_hash`, maps third-party user to internal user by `bms_user_id`, creates service audit log, and returns logged-in user data with permissions.
+ *     tags: [User]
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token_hash
+ *             properties:
+ *               token_hash:
+ *                 type: string
+ *                 description: Third-party JWT token hash
+ *                 example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTYwLCJuYW1lIjoiU3VkaXB0YSIsImVtYWlsIjoic3VkaXB0YS5lY29uc3RyYUBnbWFpbC5jb20iLCJjb21wYW55X2lkIjozOSwicG9zaXRpb24iOiJDdXN0b21lciIsImJyYW5jaF9pZCI6MCwiYnJhbmNoX3Bvc2l0aW9uIjpudWxsLCJkZXBhcnRtZW50c19pZCI6NjExLCJpYXQiOjE3NzMyMTAxMzF9.ZTmK7jU_hT34cFsucp9AAV-Nn3vaJtTztYF2c0umlIE"
+ *               service_url:
+ *                 type: string
+ *                 description: Source service callback URL for audit logging
+ *                 example: "http://localhost:5000/api//user/validate-third-party-user"
+ *               service_name:
+ *                 type: string
+ *                 description: Source service name for audit logging
+ *                 example: "BMS Task Management Login"
+ *               service_method:
+ *                 type: string
+ *                 description: HTTP method of source service request
+ *                 example: "POST"
+ *           example:
+ *             token_hash: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MTYwLCJuYW1lIjoiU3VkaXB0YSIsImVtYWlsIjoic3VkaXB0YS5lY29uc3RyYUBnbWFpbC5jb20iLCJjb21wYW55X2lkIjozOSwicG9zaXRpb24iOiJDdXN0b21lciIsImJyYW5jaF9pZCI6MCwiYnJhbmNoX3Bvc2l0aW9uIjpudWxsLCJkZXBhcnRtZW50c19pZCI6NjExLCJpYXQiOjE3NzMyMTAxMzF9.ZTmK7jU_hT34cFsucp9AAV-Nn3vaJtTztYF2c0umlIE"
+ *             service_url: "http://localhost:5000/api//user/validate-third-party-user"
+ *             service_name: "BMS Task Management Login"
+ *             service_method: "POST"
+ *     responses:
+ *       200:
+ *         description: Token validated and login successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Token is validated & logged in successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       description: Internal matched user details
+ *                       additionalProperties: true
+ *                     tokenData:
+ *                       type: object
+ *                       description: Decoded third-party token payload
+ *                       additionalProperties: true
+ *                     permissions:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                       description: Permission list for logged-in user
+ *       400:
+ *         description: Bad request - Token missing or invalid token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Token is required"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error validating third-party user token"
+ *                 error:
+ *                   type: string
+ *                   example: "Error details"
+ */
