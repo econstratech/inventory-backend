@@ -662,7 +662,7 @@ exports.ValidateThirdPartyUser = async (req, res) => {
             message: "Token is validated & logged in successfully",
             data: {
                 user: user,
-                tokenData: decoded,
+                tokenData: newToken,
                 permissions: permissionsList
             }
         });
