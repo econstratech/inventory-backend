@@ -816,6 +816,82 @@
 
 /**
  * @swagger
+ * /api/sales/sale-order-remarks/{id}:
+ *   get:
+ *     summary: Get all remarks of a sale order
+ *     description: Returns all remarks for a sale order in descending order of creation time (no pagination).
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Sale order ID
+ *         example: 191
+ *     responses:
+ *       200:
+ *         description: Sale order remarks fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Sale order remarks fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 12
+ *                       remarks:
+ *                         type: string
+ *                         example: "Approved by management."
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-03-12T10:25:00.000Z"
+ *                       user:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 5
+ *                           name:
+ *                             type: string
+ *                             example: "Sudipta"
+ *                           email:
+ *                             type: string
+ *                             format: email
+ *                             example: "sudipta@example.com"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error fetching sale order remarks"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/sales/rejected-by-management/{id}:
  *   put:
  *     summary: Reject or confirm sales quotation by management

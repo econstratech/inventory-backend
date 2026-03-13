@@ -1770,6 +1770,20 @@
  *           type: integer
  *         description: Product ID
  *         example: 12
+ *       - in: query
+ *         name: product_variant_id
+ *         schema:
+ *           type: integer
+ *         description: Product variant ID
+ *         example: 1
+ *         required: false
+ *       - in: query
+ *         name: sales_id
+ *         schema:
+ *           type: integer
+ *         description: Sales order ID (used with product_variant_id to calculate received product variants count)
+ *         example: 101
+ *         required: false
  *     responses:
  *       200:
  *         description: Store-wise stock fetched successfully
@@ -1856,6 +1870,10 @@
  *                       type: integer
  *                       description: Total stock across all warehouses/stores
  *                       example: 130
+ *                     received_product_variants_count:
+ *                       type: integer
+ *                       description: Count of received records for the given product_variant_id and sales_id
+ *                       example: 2
  *       404:
  *         description: Product not found
  *         content:

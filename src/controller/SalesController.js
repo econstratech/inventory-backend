@@ -814,6 +814,16 @@ exports.getSalesQuotation = async (req, res) => {
                 {
                   association: 'user',
                   attributes: ['id', 'name'],
+                },
+                {
+                  association: 'productVariant',
+                  attributes: ['id', 'weight_per_unit'],
+                  include: [
+                    {
+                      association: 'masterUOM',
+                      attributes: ['id', 'name', 'label'],
+                    }
+                  ]
                 }
               ]
             },
@@ -826,7 +836,7 @@ exports.getSalesQuotation = async (req, res) => {
             association: 'productData',
             attributes: ['id', 'product_name', 'product_code', 'sku_product'],
             include: [
-              ...(type !== 'dispatch' ? relationsWithIndividualProduct : [])
+              ...relationsWithIndividualProduct
             ]
           },
           {
@@ -1239,12 +1249,32 @@ exports.StatusUpdate = async (req, res) => {
 
 // receive sales product by floor manager
 exports.receiveSalesProduct = async (req, res) => {
-  const { sales_id, sales_product_id, quantity, warehouse_id } = req.body;
+  const { 
+    sales_id, 
+    sales_product_id, 
+    product_id,
+    unit_price,
+    product_variant_id,
+    quantity, 
+    warehouse_id
+  } = req.body;
+
   let transaction = null;
   try {
     // Get the sales product
     const salesProduct = await SalesProduct.findOne({
-      attributes: ['id', 'sales_id', 'warehouse_id', 'product_id', 'qty', 'unit_price', 'tax', 'taxExcl', 'taxIncl'],
+      attributes: [
+        'id', 
+        'sales_id', 
+        'warehouse_id', 
+        'product_id', 
+        'product_variant_id', 
+        'qty', 
+        'unit_price', 
+        'tax', 
+        'taxExcl', 
+        'taxIncl'
+      ],
       where: { id: sales_product_id },
       include: [
         {
@@ -1254,6 +1284,8 @@ exports.receiveSalesProduct = async (req, res) => {
         {
           association: 'sales_product_received',
           attributes: ['id', 'received_quantity', 'rejected_quantity'],
+          where: { sales_product_id: sales_product_id },
+          required: false,
         }
       ]
     });
@@ -1275,42 +1307,79 @@ exports.receiveSalesProduct = async (req, res) => {
     if (totalReceivedQuantity === parseInt(salesProduct.qty)) {
       return res.status(400).json({ message: "Sales product already received" });
     }
-    // add the quantity to the total received quantity
-    totalReceivedQuantity += quantity;
 
     // start the transaction
     transaction = await sequelize.transaction();
 
-    const totalTaxExcl = salesProduct.unit_price * quantity;
-    const tax_amount = totalTaxExcl * salesProduct.tax / 100;
+    let order_quantity = salesProduct.qty;
+    let updateSalesProduct = {};
 
-    const totalTaxIncl = totalTaxExcl + tax_amount;
+    // If order is not partially received then update the sales product
+    if (totalReceivedQuantity === 0 
+      && (
+        product_id !== parseInt(salesProduct.product_id) || 
+        product_variant_id !== parseInt(salesProduct.product_variant_id) ||
+        req.body.order_quantity !== salesProduct.qty ||
+        unit_price !== salesProduct.unit_price
+      )) {
 
-    // create the sales product received
-    await SalesProductReceived.create({
-      sales_id: sales_id,
-      sales_product_id: sales_product_id,
-      product_id: salesProduct.product_id,
-      warehouse_id: warehouse_id,
-      company_id: req.user.company_id,
-      received_by: req.user.id,
-      received_quantity: parseInt(quantity),
-      unit_price: salesProduct.unit_price,
-      tax: salesProduct.tax,
-      taxExcl: totalTaxExcl,
-      taxIncl: totalTaxIncl,
-    }, { transaction });
-
-    // update the warehouse id if it is different from the sales product warehouse id
-    if(salesProduct.warehouse_id !== warehouse_id) {
-      await SalesProduct.update({ warehouse_id: warehouse_id }, {
+      // Update the sales product if the product id, product variant id, order quantity or unit price is different
+        order_quantity = req.body.order_quantity;
+        const totalTaxExcl = unit_price * parseInt(order_quantity);
+        const tax_amount = totalTaxExcl * (parseInt(salesProduct.tax) / 100);
+    
+        const totalTaxIncl = totalTaxExcl + tax_amount;
+        updateSalesProduct = {
+          ...updateSalesProduct,
+          qty: order_quantity,
+          unit_price: unit_price,
+          taxExcl: totalTaxExcl,
+          taxIncl: totalTaxIncl,
+          taxAmount: tax_amount
+        };
+  
+      updateSalesProduct = {
+        ...updateSalesProduct,
+        product_id: product_id,
+        product_variant_id: product_variant_id,
+        warehouse_id: warehouse_id
+      };
+  
+  
+      // update the sales product
+      await SalesProduct.update(updateSalesProduct, {
         where: { id: sales_product_id },
         transaction,
       });
     }
 
+
+    // calculate the tax for the received quantity
+    const totalTaxExclforReceived = unit_price * parseInt(quantity);
+    const tax_amount = totalTaxExclforReceived * (parseInt(salesProduct.tax) / 100);
+
+    const totalTaxInclforReceived = totalTaxExclforReceived + tax_amount;
+
+    // create the sales product received
+    await SalesProductReceived.create({
+      sales_id: sales_id,
+      sales_product_id: sales_product_id,
+      product_id: product_id,
+      product_variant_id: product_variant_id,
+      warehouse_id: warehouse_id,
+      company_id: req.user.company_id,
+      received_by: req.user.id,
+      received_quantity: parseInt(quantity),
+      unit_price: unit_price,
+      tax: parseInt(salesProduct.tax),
+      taxExcl: totalTaxExclforReceived,
+      taxIncl: totalTaxInclforReceived,
+    }, { transaction });
+
+    // add the quantity to the total received quantity
+    totalReceivedQuantity += quantity;
     // Update status of the sales product to 10 if fully received otherwise set to 9
-    if (parseInt(salesProduct.qty) === parseInt(totalReceivedQuantity)) {
+    if (parseInt(order_quantity) === parseInt(totalReceivedQuantity)) {
       await SalesProduct.update({ status: 10 }, {
         where: { id: sales_product_id },
         transaction,
@@ -1323,7 +1392,7 @@ exports.receiveSalesProduct = async (req, res) => {
     }
 
     // update the stock entry (increase quantity & decrease sale_order_recieved)
-    await updateStockEntry(salesProduct.sale.warehouse_id, salesProduct.product_id, salesProduct.qty, 10, transaction);
+    await updateStockEntry(warehouse_id, product_id, product_variant_id, quantity, 10, transaction);
 
     // commit the transaction
     await transaction.commit();
@@ -1360,6 +1429,10 @@ exports.receiveSalesProduct = async (req, res) => {
     });
   } catch (error) {
     console.error("Error in receiveSalesProduct", error);
+    // Rollback the transaction if it exists
+    if (transaction) {
+      await transaction.rollback();
+    }
     return res.status(500).json({
       error: "An error occurred while receiving the sales product",
     });
@@ -1418,50 +1491,55 @@ exports.finalDispatch = async (req, res) => {
     });
     await Promise.all(salesProductPromises);
 
-    const batchPromises = [];
-    batches.forEach(batch => {
-      batchPromises.push(
-        new Promise(async (resolve, reject) => {
-          try {
-            const receiveProductBatch = await ReceiveProductBatch.findOne({
-              attributes: ['id', 'quantity', 'purchase_id', 'warehouse_id', 'available_quantity'],
-              where: { id: batch.batch_id },
-              transaction: t,
-            });
-            if (!receiveProductBatch) {
-              reject(new Error("Receive product batch not found"));
-            }
-            await TrackBatchProductLog.create(
-              {
-                sales_id: salesOrder.id,
-                sales_product_id: batch.sales_product_id,
-                status: 1,
-                user_id: req.user.id,
-                company_id: req.user.company_id,
-                purchase_id: receiveProductBatch.purchase_id,
-                warehouse_id: receiveProductBatch.warehouse_id,
-                receive_product_batch_id: batch.batch_id,
-                quantity: batch.quantity,
-              },
-              {
+    // if batches are present then create the track batch product log
+    if (batches.length > 0) {
+      const batchPromises = [];
+
+      batches.forEach(batch => {
+        batchPromises.push(
+          new Promise(async (resolve, reject) => {
+            try {
+              const receiveProductBatch = await ReceiveProductBatch.findOne({
+                attributes: ['id', 'quantity', 'purchase_id', 'warehouse_id', 'available_quantity', 'product_variant_id'],
+                where: { id: batch.batch_id },
                 transaction: t,
+              });
+              if (!receiveProductBatch) {
+                reject(new Error("Receive product batch not found"));
               }
-            );
-            await ReceiveProductBatch.update({
-              available_quantity: receiveProductBatch.available_quantity - batch.quantity,
-            }, {
-              where: { id: batch.batch_id },
-              transaction: t,
-            });
-            resolve();
-          } catch (error) {
-            console.error("Error in batchPromises", error);
-            reject(error);
-          }
-        })
-      );
-    });
-    await Promise.all(batchPromises);
+              await TrackBatchProductLog.create(
+                {
+                  sales_id: salesOrder.id,
+                  sales_product_id: batch.sales_product_id,
+                  product_variant_id: receiveProductBatch.product_variant_id,
+                  status: 1,
+                  user_id: req.user.id,
+                  company_id: req.user.company_id,
+                  purchase_id: receiveProductBatch.purchase_id,
+                  warehouse_id: receiveProductBatch.warehouse_id,
+                  receive_product_batch_id: batch.batch_id,
+                  quantity: batch.quantity,
+                },
+                {
+                  transaction: t,
+                }
+              );
+              await ReceiveProductBatch.update({
+                available_quantity: receiveProductBatch.available_quantity - batch.quantity,
+              }, {
+                where: { id: batch.batch_id },
+                transaction: t,
+              });
+              resolve();
+            } catch (error) {
+              console.error("Error in batchPromises", error);
+              reject(error);
+            }
+          })
+        );
+      });
+      await Promise.all(batchPromises);
+    }
 
     // Check if any product is NOT dispatched
     const notDispatchedCount = await SalesProduct.count({
@@ -1997,7 +2075,7 @@ exports.insertRemarks = async (req, res) => {
 //find managment remarks
 exports.getManagmentReview = async (req, res) => {
   try {
-    // Get all remarks for the purchase order
+    // Get all remarks for the sales order
     const remarks = await SalesRemarks.findAll({
       attributes: ['id', 'remarks', 'created_at'],
       where: { sales_id: req.params.id },
@@ -2020,6 +2098,42 @@ exports.getManagmentReview = async (req, res) => {
   } catch (err) {
     console.error(err); // Log the error for debugging
     res.status(500).json({ error: "Server error", message: err.message });
+  }
+};
+
+/**
+ * Get all remarks of a sales order (without pagination)
+ */
+exports.GetSaleOrderRemarks = async (req, res) => {
+  try {
+    const saleId = req.params.id;
+
+    const remarks = await SalesRemarks.findAll({
+      attributes: ['id', 'remarks', 'created_at'],
+      where: { sales_id: saleId },
+      order: [['created_at', 'DESC']],
+      raw: true,
+      nest: true,
+      include: [
+        {
+          association: 'user',
+          attributes: ['id', 'name', 'email'],
+        },
+      ],
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: 'Sale order remarks fetched successfully',
+      data: remarks,
+    });
+  } catch (error) {
+    console.error('GetSaleOrderRemarks error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Error fetching sale order remarks',
+      error: error.message,
+    });
   }
 };
 
@@ -3945,6 +4059,8 @@ exports.ApprovedByManagement = async (req, res) => {
 
         promises.push(SalesProduct.update(
           {
+            product_id: product.product_id,
+            product_variant_id: product.product_variant_id,
             qty: product.qty,
             unit_price: product.unit_price,
             tax: product.tax,
@@ -3959,7 +4075,7 @@ exports.ApprovedByManagement = async (req, res) => {
         ));
 
         // Update the stock entry
-        promises.push(updateStockEntry(sale.warehouse_id, product.product_id, product.qty, 9, transaction));
+        promises.push(updateStockEntry(sale.warehouse_id, product.product_id, product.product_variant_id, product.qty, 9, transaction));
       });
     }
 
@@ -4004,13 +4120,13 @@ exports.ApprovedByManagement = async (req, res) => {
   }
 };
 
-const updateStockEntry = async (warehouse_id, product_id, quantity, status, transaction = false) => {
+const updateStockEntry = async (warehouse_id, product_id, product_variant_id, quantity, status, transaction = false) => {
   return new Promise(async (resolve, reject) => {
   try {
     // check if the stock entry exists
     const stockEntry = await ProductStockEntry.findOne({
       attributes: ['id', 'quantity', 'sale_order_recieved'],
-      where: { warehouse_id, product_id },
+      where: { warehouse_id, product_id, product_variant_id },
       raw: true,
     });
     if (!stockEntry) {
