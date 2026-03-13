@@ -251,6 +251,7 @@ SalesProductReceived.belongsTo(Company, { foreignKey: 'company_id', as: 'company
 SalesProductReceived.belongsTo(Sale, { foreignKey: 'sales_id', as: 'sale' });
 SalesProductReceived.belongsTo(User, { foreignKey: 'received_by', as: 'user' });
 SalesProductReceived.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
+SalesProductReceived.belongsTo(ProductVariant, { foreignKey: 'product_variant_id', as: 'productVariant' });
 // SalesRemarks associations
 SalesRemarks.belongsTo(Sale, { foreignKey: 'sales_id',as: 'remark' });
 SalesRemarks.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

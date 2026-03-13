@@ -16,6 +16,10 @@ const SalesProductReceived = sequelize.define('SalesProductReceived', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    product_variant_id: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+    },
     company_id: {
         type: DataTypes.BIGINT,
         allowNull: false,

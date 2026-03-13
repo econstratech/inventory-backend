@@ -22,6 +22,7 @@ const {
   Sale,
   Purchase,
   MasterUOM,
+  SalesProductReceived,
   GeneralSettings
 } = require("../model");
 // const { CompressImage } = require("../utils/ImageUpload");
@@ -3232,12 +3233,15 @@ exports.DeleteStockEntry = async (req, res) => {
  * @param {object} req - The request object
  * @param {object} req.params - Route parameters
  * @param {number} req.params.id - Product ID
+ * @param {number} req.query.product_variant_id - Product variant ID
  * @param {object} res - The response object
  * @returns {Promise<void>}
  */
 exports.GetStoreWiseStock = async (req, res) => {
   try {
     const { id } = req.params;
+    const { product_variant_id, sales_id } = req.query;
+    let receivedProductVariantsCount = 0;
 
     // Validate product exists
     const product = await Product.findOne({
@@ -3255,6 +3259,18 @@ exports.GetStoreWiseStock = async (req, res) => {
         message: "Product not found" 
       });
     }
+    // if product variant id and sales id are provided, get the received product variant count
+    if (product_variant_id && sales_id) {
+      receivedProductVariantsCount = await SalesProductReceived.count({
+        where: {
+          product_id: id,
+          company_id: req.user.company_id,
+          sales_id: sales_id,
+          product_variant_id: product_variant_id,
+        },
+      });
+    }
+
 
     // Get stock entries for this product grouped by warehouse
     const stockEntries = await ProductStockEntry.findAll({
@@ -3269,7 +3285,8 @@ exports.GetStoreWiseStock = async (req, res) => {
       ],
       where: { 
         product_id: id,
-        company_id: req.user.company_id
+        company_id: req.user.company_id,
+        ...(product_variant_id ? { product_variant_id: product_variant_id } : {}),
       },
       include: [
         {
@@ -3286,14 +3303,10 @@ exports.GetStoreWiseStock = async (req, res) => {
       warehouse: {
         id: entry.warehouse?.id,
         name: entry.warehouse?.name,
-        // address: entry.warehouse?.address1,
-        // city: entry.warehouse?.city,
-        // state: entry.warehouse?.state
       },
       available_stock: entry.quantity || 0,
       inventory_at_transit: entry.inventory_at_transit || 0,
       inventory_at_production: entry.inventory_at_production || 0,
-      // total_available: (entry.quantity || 0) + (entry.inventory_at_transit || 0) + (entry.inventory_at_production || 0),
       created_at: entry.created_at,
       updated_at: entry.updated_at
     }));
@@ -3313,7 +3326,8 @@ exports.GetStoreWiseStock = async (req, res) => {
           product_code: product.product_code
         },
         stores: storeWiseStock,
-        total_stock_across_all_stores: totalStock
+        total_stock_across_all_stores: totalStock,
+        received_product_variants_count: parseInt(receivedProductVariantsCount)
       }
     });
   } catch (error) {

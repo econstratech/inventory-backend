@@ -63,7 +63,8 @@ const {
     receiveSalesProduct,
     finalDispatch,
     getAvailableBatchesForSaleOrder,
-    fetchSalesDetails
+    fetchSalesDetails,
+    GetSaleOrderRemarks
 } = require("../controller/SalesController");
 
 const { authToken } = require("../utils/Middleware");
@@ -88,6 +89,7 @@ router.put("/rejected-by-management/:id", authToken, RejectedByManagement);
 
 router.get("/all-rejected-purchase", authToken, GetAllPurchaseReject);
 router.get("/sales/:id", authToken, getSalesQuotation);
+router.get("/sale-order-remarks/:id", authToken, GetSaleOrderRemarks);
 router.get("/fetch-details", authToken, fetchSalesDetails);
 router.get("/available-batches/:id", authToken, getAvailableBatchesForSaleOrder);
 router.put("/update/:id", authToken, updateSalesQuotation);

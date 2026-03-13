@@ -12,6 +12,10 @@ const TrackBatchProductLog = sequelize.define('TrackBatchProductLog', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    product_variant_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     sales_id: {
         type: DataTypes.BIGINT,
         allowNull: false,
