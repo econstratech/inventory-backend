@@ -16,8 +16,7 @@ const {
   EditNotification, 
   GetWhatsappSetting, 
   GeneralSettings, 
-  fetchSettings, 
-  ModulesFetch, 
+  fetchSettings,
   CreateStore, 
   UpdateStore, 
   GetAllStores, 
@@ -46,10 +45,9 @@ const {
   UpdateWhatsappSetting 
 } = require("../controller/SettingController");
 const router = express.Router();
-const {GetTaskRemainder,GetTaskPriority,GetTaskMode,GetTaskStatus} =require("../controller/TaskPropertiesController");
 const { addEwayBillAccount, updateEwayBillAccount, getAllEwayBillAccounts, deleteEwayBillAccount } = require("../controller/EwayBillController");
 const { eaddEwayBillAccount, egetAllEwayBillAccounts, edeleteEwayBillAccount } = require("../controller/EinvoiceApiAccount");
-const { placeOrder, verifyPayment, getOrderDetails, getAllOrdersWithItems, getOrderItemWiseDetails, markOrderItemDelivered, cancelOrderItem, downloadInvoice, getCancelledOrders, getMonthlyOrderSummary, getCustomerCountByCompany, getOrderStatusSummary, getOrderItemReport } = require("../controller/posController");
+const { placeOrder, verifyPayment, getOrderDetails, getOrderItemWiseDetails, markOrderItemDelivered, cancelOrderItem, downloadInvoice, getCancelledOrders, getMonthlyOrderSummary, getCustomerCountByCompany, getOrderStatusSummary, getOrderItemReport } = require("../controller/posController");
 const { CompanyStatusChnage } = require("../controller/CompanyManagement");
 
 
@@ -59,12 +57,7 @@ router.post('/create-department', authToken, CreateDepartment);
 router.put('/update-department/:id', authToken, UpdateDepartment);
 router.delete('/delete-department/:id', authToken, DeleteDepartment);
 router.put('/update-stockorder', authToken, UpdateStockOrder);
-//Task properties
-router.get('/get-task-remainder', authToken, GetTaskRemainder);
-router.get('/get-task-priority', authToken, GetTaskPriority);
-router.get('/get-task-mode', authToken, GetTaskMode);
-router.get('/get-task-status', authToken, GetTaskStatus);
-router.get('/get-stockorder-setting', authToken, GetStockOrderSetting);
+
 //Holiday
 router.get('/all-holiday-list', authToken, HolidayList);
 router.post('/create-holiday', authToken, CreateHoliday);

@@ -10,7 +10,6 @@ const MasteruomModel = require("../model/MasteruomModel")
 const NotificationSettingModel = require("../model/NotificationSettingModel")
 const OfficeTimeModel = require("../model/OfficeTimeModel")
 const Warehouse = require("../model/Warehouse")
-const Pemission = require("../model/Permission");
 const Permission = require("../model/Permission")
 const Module = require("../model/Module")
 const PaymentGateway = require("../model/PaymentGateway")

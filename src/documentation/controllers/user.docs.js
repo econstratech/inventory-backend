@@ -263,19 +263,6 @@
 
 /**
  * @swagger
- * /api/user/get-role:
- *   get:
- *     summary: Get all roles
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Roles retrieved successfully
- */
-
-/**
- * @swagger
  * /api/user/update-user:
  *   post:
  *     summary: Update user details
@@ -298,19 +285,6 @@
  *     responses:
  *       200:
  *         description: User updated successfully
- */
-
-/**
- * @swagger
- * /api/user/get-permission:
- *   get:
- *     summary: Get user permissions
- *     tags: [User]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Permissions retrieved successfully
  */
 
 /**

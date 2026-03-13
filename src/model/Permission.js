@@ -17,8 +17,8 @@ const Permission = sequelize.define("Permission", {
     allowNull: false,
     defaultValue: "web",
   },
-  module: {
-    type: DataTypes.INTEGER,
+  module_id: {
+    type: DataTypes.BIGINT,
     allowNull: false,
   }
 }, {

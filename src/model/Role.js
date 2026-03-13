@@ -1,8 +1,5 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
-const Permission = require("./Permission");
-const RoleHasPermissionModel = require("./RoleHasPermissionsModel");
-const Module = require("./Module");
 
 const Role = sequelize.define("Role", {
   id: {
@@ -15,8 +12,12 @@ const Role = sequelize.define("Role", {
     allowNull: false,
   },
   company_id: {
-    type: DataTypes.INTEGER,
-    defaultValue: 0
+    type: DataTypes.BIGINT,
+    allowNull: true
+  },
+  description: {
+    type: DataTypes.TEXT,
+    allowNull: true
   },
   is_delete: {
     type: DataTypes.INTEGER,
@@ -27,27 +28,22 @@ const Role = sequelize.define("Role", {
   timestamps: false,
 });
 
-Role.belongsToMany(Permission, {
-  through: RoleHasPermissionModel,
-  constraints: false,
-  foreignKey: 'role_id',
-  otherKey: 'permission_id',
-  as: "permissions"
-});
+// Role.belongsToMany(Permission, {
+//   through: RoleHasPermissionModel,
+//   constraints: false,
+//   foreignKey: 'role_id',
+//   otherKey: 'permission_id',
+//   as: "permissions"
+// });
 
-Role.hasMany(RoleHasPermissionModel, {
-  foreignKey: 'role_id',
-  as: 'rolePermissions'
-});
+// Role.hasMany(RoleHasPermissionModel, {
+//   foreignKey: 'role_id',
+//   as: 'rolePermissions'
+// });
 
-RoleHasPermissionModel.belongsTo(Permission, {
-  foreignKey: 'permission_id',
-  as: 'permission'
-});
-
-Permission.belongsTo(Module, {
-  foreignKey: 'module',
-  as: 'permission_module'
-});
+// RoleHasPermissionModel.belongsTo(Permission, {
+//   foreignKey: 'permission_id',
+//   as: 'permission'
+// });
 
 module.exports = Role;

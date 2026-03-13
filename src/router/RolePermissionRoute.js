@@ -1,18 +1,31 @@
 
 const express = require("express");
 const { authToken } = require("../utils/Middleware");
-const { GetRole, ShowPermission, CreateRole, UpdateRole, DeleteRole } = require("../controller/RolePermissionController");
+const { 
+    GetAllRoles,
+    createPermission,
+    updatePermission,
+    deletePermission,
+    GetAllPermissions,
+    CreateRole, 
+    UpdateRole, 
+    DeleteRole,
+    assignPermissionsToRole
+} = require("../controller/RolePermissionController");
 
 const router = express.Router();
 
+router.get('/get-all-roles',authToken, GetAllRoles);
+router.post('/create-role',authToken, CreateRole);
+router.post('/update-role/:id',authToken, UpdateRole);
+router.delete('/delete-role/:id',authToken, DeleteRole);
 
-router.get("/get-role", authToken, GetRole)
-// router.post('/register', Register);
-// router.post('/login', Login);
-router.get('/all-permission', authToken, ShowPermission);
-router.post('/create-role', authToken, CreateRole)
-router.put('/role-update/:id', authToken, UpdateRole)
-router.delete('/delete-role/:id', authToken, DeleteRole)
+router.post('/create-permission', authToken, createPermission);
+router.put('/update-permission/:id', authToken, updatePermission);
+router.delete('/delete-permission/:id', authToken, deletePermission);
+router.get('/get-all-permissions', authToken, GetAllPermissions);
+
+router.post('/assign-permissions-to-role/:role_id', authToken, assignPermissionsToRole);
 
 
 

@@ -4,16 +4,14 @@ const {
     Register, 
     Login, 
     usersList, 
-    GetAllUser, 
-    GetAllUserCount, 
-    GetAllRole, 
-    UpdateUser, 
-    GetPermission, 
+    GetAllUser,
+    UpdateUserRoles,
     ChangePassword, 
     ValidateUser, 
     ValidateThirdPartyUser,
-    ResetPassword 
+    ResetPassword
 } = require("../controller/UserController");
+
 const { authToken } = require("../utils/Middleware");
 
  
@@ -25,12 +23,11 @@ router.post('/validate-third-party-user', ValidateThirdPartyUser);
 router.post('/reset-password', ResetPassword);
 router.get('/all-user',authToken, GetAllUser);
 router.get('/list',authToken, usersList);
-router.get('/allusercount', authToken,GetAllUserCount);
+// router.get('/allusercount', authToken,GetAllUserCount);
 router.post('/change-password', authToken, ChangePassword)
+router.post('/update-user-roles',authToken, UpdateUserRoles);
 
-router.get('/get-role',authToken, GetAllRole);
-router.post('/update-user',authToken, UpdateUser);
-router.get('/get-permission',authToken, GetPermission);
+
 // Define Routes
 
 module.exports = router;

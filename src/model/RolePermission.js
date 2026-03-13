@@ -1,9 +1,9 @@
 const { DataTypes } = require("sequelize");
-const sequelize = require("../db/db");
+const sequelize = require("../database/db-connection");
 
 const RolePermission = sequelize.define("RolePermission", {
   role_id: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.BIGINT,
     references: {
       model: 'roles',
       key: 'id',

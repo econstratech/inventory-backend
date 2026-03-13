@@ -238,7 +238,7 @@ const getUserPermissionList = async (user) => {
         nest: true,
         include: [{
             association: 'permissions',
-            attributes: ['id', 'name', 'module'],
+            attributes: ['id', 'name', 'module_id'],
             through: { attributes: [] },
         }]
     });
@@ -246,7 +246,7 @@ const getUserPermissionList = async (user) => {
     let userModuleIds = [];
     roleDetails.forEach((userRole) => {
         permissions.push(userRole.permissions.name);
-        userModuleIds.push(userRole.permissions.module);
+        userModuleIds.push(userRole.permissions.module_id);
     });
     // Unique module IDs
     userModuleIds = [...new Set(userModuleIds)];
@@ -354,122 +354,50 @@ exports.usersList = async (req, res) => {
     }
 }
 
-//get total count
-// exports.GetAllUserCount = async (req, res) => {
-
-//     try {
-//         // Fetch all users with status 1
-//         const users = await User.findAll({
-//             where: {
-//                 status: 1,
-//                 company_id: req.user.company_id
-//             },
-//         });
-
-//         // Calculate the total count of users
-//         const totalCount = users.length;
-
-//         // Respond with the users and total count
-//         return res.status(200).json({
-//             message: true,
-//             totalCountuser: totalCount,
-//             users: users
-//         });
-//     } catch (err) {
-//         // Handle errors and respond with a 400 status code
-//         return res.status(400).json(err);
-//     }
-// };
-
-exports.GetAllRole = async (req, res) => {
+/**
+ * Update user roles
+ * @param {object} req - The request object
+ * @param {object} req.body - The request body
+ * @param {string} req.body.id - The user id
+ * @param {string} req.body.role - The user roles
+ * @param {object} res - The response object
+ * @returns {Promise<void>}
+ */ 
+exports.UpdateUserRoles = async (req, res) => {
     try {
-        const role = await Role.findAll({
-            attributes: ['id', 'name'],
-            raw: true,
+        const { id, role } = req.body;
+        // check if user exists, if not return 404
+        const user = await User.findOne({
+            attributes: ['id'],
             where: {
-                is_delete: 0,
+                id: id,
                 company_id: req.user.company_id
             },
+            raw: true,
         });
-        return res.status(200).json({ "message": true, "data": role })
-    } catch (err) {
-        return res.status(400).json(err)
-    }
-}
-
-exports.UpdateUser = async (req, res) => {
-    try {
-        const role = await User.update({ role: req.body.role }, {
-            where: {
-                id: req.body.id,
-            },
-        });
-        return res.status(200).json({ status: true, message: "User has been updated" })
-    } catch (err) {
-        return res.status(400).json(err)
-    }
-}
-
-exports.GetPermission = async (req, res) => {
-    // Get user details
-    const user = await User.findOne({
-        attributes: ['id', 'role'],
-        where: { id: req.user.id },
-        raw: true,
-    });
-
-    // If user or role is not found
-    if (!user || user.role === '') {
-        return res.status(200).json({ status: true, permission: [] })
-    }
-    const roles = JSON.parse(user.role);
-
-    let permissions = [];
-    const roleDetails = await Role.findAll({
-        attributes: ['id'],
-        where: {
-            id: { [Op.in]: roles },
-        },
-        raw: true,
-        nest: true,
-        include: [{
-            association: 'permissions',
-            attributes: ['id', 'name', 'module'],
-            through: { attributes: [] },
-        }]
-    });
-
-    let userModuleIds = [];
-    roleDetails.forEach((userRole) => {
-        permissions.push(userRole.permissions.name);
-        userModuleIds.push(userRole.permissions.module);
-    });
-    // Unique module IDs
-    userModuleIds = [...new Set(userModuleIds)];
-    const userModules = await Module.findAll({
-        attributes: ['id', 'name'],
-        raw: true,
-        where: {
-            id: { [Op.in]: userModuleIds }
+        if (!user) {
+            return res.status(404).json({ status: false, message: "User not found" });
         }
-    });
-
-    userModules.forEach((mod) => {
-        permissions.push(mod.name);
-    });
-
-    const allModulesAndPermissions = [...new Set(permissions)];
-
-    return res.status(200).json({
-        status: true,
-        totalCount: allModulesAndPermissions.length,
-        permission: allModulesAndPermissions
-    })
+        // check if roles are provided, if not return 400
+        if (!role) {
+            return res.status(400).json({ status: false, message: "Roles are required" });
+        }
+        // check if roles are valid, if not return 400
+        const roles = JSON.parse(role);
+        // update user roles
+        await User.update({ role: roles }, {
+            where: { id: user.id }
+        });
+        // return response
+        return res.status(200).json({ status: true, message: "User roles updated successfully" });
+    } catch (err) {
+        // return error
+        return res.status(400).json(err);
+    }
 }
 
-//get total count
-exports.GetAllUserCount = async (req, res) => {
-
+/**
+ * Get total count of users
     try {
         // Fetch all active users count
         const totalUserCount = await User.count({
