@@ -3,6 +3,7 @@ const Company = require('./Company');
 const Module = require('./Module');
 const Role = require('./Role');
 const Permission = require('./Permission');
+const RolePermission = require('./RolePermission');
 const Warehouse = require('./Warehouse');
 const ProductAttribute = require('./ProductAttribute')
 const ProductAttributeValue = require('./ProductAttributeValue')
@@ -80,12 +81,6 @@ Product.belongsTo(MasterProductType, {
     foreignKey: 'product_type_id',
     as: 'masterProductType'
 });
-// Product.belongsTo(MasterUOM, {
-//     constraints: false,
-//     foreignKey: 'uom_id',
-//     as: 'masterUOM'
-// });
-
 
 Product.hasMany(TrackProductStock, {
     foreignKey: 'product_id',
@@ -345,6 +340,23 @@ StockTransferBatch.belongsTo(ReceiveProductBatch, { foreignKey: 'receive_product
 ServiceAuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 ServiceAuditLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
+// RolePermission associations
+Permission.belongsTo(Module, { foreignKey: 'module', as: 'permission_module' });
+RolePermission.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
+RolePermission.belongsTo(Permission, { foreignKey: 'permission_id', as: 'permission' });
+RolePermission.belongsTo(Module, { foreignKey: 'module_id', as: 'module' });
+
+Role.hasMany(RolePermission, { foreignKey: 'role_id', as: 'rolePermissions' });
+Role.belongsToMany(Permission, {
+    through: RolePermission,
+    foreignKey: 'role_id',
+    otherKey: 'permission_id',
+    as: 'permissions'
+});
+Permission.hasMany(RolePermission, { foreignKey: 'permission_id', as: 'rolePermissions' });
+Module.hasMany(RolePermission, { foreignKey: 'module_id', as: 'rolePermissions' });
+Module.hasMany(Permission, { foreignKey: 'module_id', as: 'permissions' });
+
 module.exports = {
     Module,
     Role,
@@ -387,4 +399,5 @@ module.exports = {
     GeneralSettings,
     ProductVariant,
     ServiceAuditLog,
+    RolePermission,
 };

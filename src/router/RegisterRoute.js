@@ -5,7 +5,6 @@
  */
 function registerRoutes(app, appPrefix) {
   const user = require("./UserRoute");
-  const task = require("./TaskTrackerRoute");
   const product = require("./ProductRoute");
   const category = require("./ProductCategoryRoute");
   const vendor = require("./VendorRoute");
@@ -15,7 +14,6 @@ function registerRoutes(app, appPrefix) {
   const sales = require("./SalesRoute");
   const moduledata = require("./moduleRoutes");
   const roledata = require("./roleRoutes");
-  const permission = require("./rolePermissionRoutes");
   const RolePermission = require("./RolePermissionRoute");
   const company = require("./CompanyRoute");
   const production = require("./ProductionRoute");
@@ -24,7 +22,6 @@ function registerRoutes(app, appPrefix) {
   const report = require("./ReportRoute");
 
   app.use(`${appPrefix}/user`, user);
-  app.use(`${appPrefix}/task`, task);
   app.use(`${appPrefix}/product`, product);
   app.use(`${appPrefix}/product-category`, category);
   app.use(`${appPrefix}/vendor`, vendor);
@@ -34,7 +31,6 @@ function registerRoutes(app, appPrefix) {
   app.use(appPrefix, settings);
   app.use(`${appPrefix}/module`, moduledata);
   app.use(`${appPrefix}/roles`, roledata);
-  app.use(`${appPrefix}/permissions`, permission);
   app.use(appPrefix, RolePermission);
   app.use(`${appPrefix}/company`, company);
   app.use(`${appPrefix}/production`, production);

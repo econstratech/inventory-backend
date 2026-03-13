@@ -1,149 +1,290 @@
-const { Op, where } = require("sequelize");
-const Role = require("../model/Role");
-const Permission = require("../model/Permission");
-const Module = require("../model/Module");
-const RoleHasPermissionModel = require("../model/RoleHasPermissionsModel");
-
+const { Op } = require("sequelize");
+const { Role, Permission, Module, RolePermission } = require("../model");
 
 
 //Role Curd Operation APi
-exports.GetRole = async (req, res) => {
+exports.GetAllRoles = async (req, res) => {
+    const { name } = req.query;
+    const whereClause = {
+        [Op.or]: [
+            { company_id: req.user.company_id },
+            { company_id: null }
+        ],
+        is_delete: 0
+    }
+    // if name is provided then add it to the where clause
+    if (name) {
+        whereClause.name = { [Op.like]: `%${name}%` }
+    }
+    // Get all roles
     const role = await Role.findAll({
-        where: {
-            company_id: {
-                [Op.or]: [req.user.company_id, 0]
-            },
-            is_delete: 0
-        },
+        attributes: ['id', 'name'],
+        where: whereClause,
         include: [{
-            model: Permission,
-            as: 'permissions',
-            through: { attributes: [] }
+            association: 'permissions',
+            attributes: ['id', 'name', 'module_id'],
+            through: { attributes: [] },
         }]
     })
-    return res.status(200).json({ data: role })
+    // return response
+    return res.status(200).json({ status: true, message: "Roles retrieved successfully", data: role })
 }
 
-exports.ShowPermission = async (req, res) => {
+/**
+ * Get all permissions
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @param {array} res.data - Permissions array
+ * @returns {Promise<void>}
+ */
+exports.GetAllPermissions = async (req, res) => {
 
     const permission = await Module.findAll({
         include: [
-            { model: Permission, as: "allmodule", attributes: ["id", "name"] },
+            { association: "permissions", attributes: ["id", "name"] },
         ]
     })
     return res.status(200).json({ data: permission })
 }
 
-// exports.GetRoleList = async (req, res) => {
-//     const role = await RoleModel.findAll({
-//         where: {
-//             company_id: {
-//                 [Op.or]: [req.user.company_id, 0]
-//             },
-//             is_delete: 0
-//         },
-//     })
-//     return res.status(200).json({ data: role })
-// }
-
+/**
+ * Create role
+ * @param {Object} req - Request object
+ * @param {string} req.body.name - Role name
+ * @param {array} req.body.permissions - Permissions array
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @returns {Promise<void>}
+ */
 exports.CreateRole = async (req, res) => {
-    const { name, permission } = req.body;
-    const existRole = await Role.findOne({
-        where: {
-            name: name,
-            company_id: req.user.company_id,
-            is_delete: 0
-        }
-    })
-    if (existRole) {
-        return res.status(400).json({ status: false, msg: "This role name already exist" })
-    } else {
-        // let role_id = 0;
-        // if (req.user.position == "Owner") {
-        //     const role = await RoleModel.create({
-        //         name: name,
-        //         company_id: 0
-        //     })
-        //     role_id = role.id;
-        // } else {
-        const role = await Role.create({
-            name: name,
-            company_id: req.user.company_id
-        })
-        if (permission != '') {
-            const AllPermission = JSON.parse(permission);
-            if (AllPermission.length > 0) {
-                for (let i = 0; i < AllPermission.length; i++) {
-                    const element = AllPermission[i];
-                    await RoleHasPermissionModel.create({
-                        permission_id: element.permission_id,
-                        role_id: role.id
-                    })
-                }
+    try {
+        const { name, permissions } = req.body;
 
+        // check if role name is provided, if not return 400
+        if (!name) {
+            return res.status(400).json({ status: false, message: "Role name is required" })
+        }
+        // check if permissions are provided, if not return 400
+        if (!permissions || permissions.length === 0) {
+            return res.status(400).json({ status: false, message: "Permissions are required" })
+        }
+        const existRole = await Role.findOne({
+            attributes: ['id'],
+            raw: true,
+            where: {
+                name: name,
+                company_id: req.user.company_id,
+                is_delete: 0
             }
+        })
+        // check if role already exists
+        if (existRole) {
+            return res.status(400).json({ status: false, message: "This role name already exist" })
         }
-        return res.status(200).json({ msg: 'New role has been created' })
+        // create role
+        const newRole = await Role.create({ name, company_id: req.user.company_id });
+        // assign permissions to role
+        const rolePermissionstoBeCreated = [];
+        permissions.forEach(eachPermission => {
+            rolePermissionstoBeCreated.push({
+                role_id: newRole.id,
+                permission_id: eachPermission.permission_id,
+                module_id: eachPermission.module_id
+            });
+        });
+        // create role permissions
+        await RolePermission.bulkCreate(rolePermissionstoBeCreated);
+        // return response
+        return res.status(200).json({ status: true, message: 'Role has been created successfully' });
+    } catch (error) {
+        console.error("Error creating role:", error);
+        return res.status(500).json({ status: false, message: "Internal Server Error", error: error.message });
     }
-
 }
 
+/**
+ * Update Role
+ * @param {string} req.params.id - Role ID
+ * @param {string} req.body.name - Role name
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @returns {Promise<void>}
+ */
 exports.UpdateRole = async (req, res) => {
-    const { name, permission } = req.body;
+    const { id } = req.params;
+    const { name } = req.body;
     const existRole = await Role.findOne({
-        where: {
-            name: name,
-            id: {[Op.not]: req.params.id},
-            company_id: req.user.company_id,
-            is_delete: 0
-        }
-    })
+        attributes: ['id', 'name'],
+        where: { id: id, company_id: req.user.company_id, is_delete: 0 },
+        raw: true,
+    });
+    // check if role already exists
     if (existRole) {
-        return res.status(400).json({ msg: "This role name already exist" })
-    } else {
-        await Role.update({
-            name: name,
-        }, { where: { id: req.params.id } })
-
-        if (permission != '') {
-            const getRoleHasPermission = await RoleHasPermissionModel.findAll({
-                where: {
-                    role_id: req.params.id
-                }
-            })
-            if (getRoleHasPermission.length > 0) {
-                await RoleHasPermissionModel.destroy({
-                    where: { role_id: req.params.id }
-                })
-            }
-            const AllPermission = JSON.parse(permission);
-            let permissionList = [];
-            if (AllPermission.length > 0) {
-                for (let i = 0; i < AllPermission.length; i++) {
-                    const element = AllPermission[i];
-                    if (!permissionList.some(data => data.permission_id == element.permission_id)) {
-                        await RoleHasPermissionModel.create({
-                            permission_id: element.permission_id,
-                            role_id: req.params.id
-                        })
-                    }
-                    permissionList.push(element)
-                }
-
-            }
-        }
-        return res.status(200).json({ msg: 'Role has been updated' })
+        return res.status(400).json({ status: false, message: "This role name already exist" })
     }
+    // update role
+    await Role.update({ name }, { where: { id } });
+
+    // return response
+    return res.status(200).json({ status: true, message: 'Role has been updated successfully' })
 }
 
 exports.DeleteRole = async (req, res) => {
     const getRole = await Role.update({ is_delete: 1 }, {
         where: { id: req.params.id }
     })
-    await RoleHasPermissionModel.destroy({
+    if (!getRole) {
+        return res.status(400).json({ status: false, message: "Role not found" })
+    }
+    await RolePermission.destroy({
         where: {
             role_id: req.params.id
         }
     })
     return res.status(200).json({ msg: 'Role has been deleted' })
 }
+
+/**
+ * Create permission against a module
+ * @param {Object} req - Request object
+ * @param {string} req.body.name - Permission name
+ * @param {string} req.body.guard_name - Guard name
+ * @param {number} req.body.module_id - Module ID
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @param {object} res.data - Permission data
+ * @returns {Promise<void>}
+ */
+exports.createPermission = async (req, res) => {
+    try {
+        const { name, guard_name, module_id } = req.body;
+
+        // check if module exists, if not return 404
+        const module = await Module.findByPk(module_id);
+        if (!module) {
+            return res.status(404).json({ status: false, message: "Module not found" });
+        }
+        // check if permission already exists, if not return 400
+        const permission = await Permission.findOne({
+            attributes: ['id'],
+            where: { name, guard_name, module_id },
+            raw: true,
+        });
+        if (permission) {
+            return res.status(400).json({ status: false, message: "Permission already exists" });
+        }
+        // create permission
+        const newPermission = await Permission.create({ name, guard_name, module_id: module_id });
+        res.status(201).json({ status: true, message: "Permission created successfully", data: newPermission });
+    } catch (err) {
+        console.error("Error creating permission:", err);
+        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    }
+};
+
+exports.updatePermission = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name } = req.body;
+        const permission = await Permission.findByPk(id);
+        if (!permission) {
+            return res.status(404).json({ status: false, message: "Permission not found" });
+        }
+        permission.name = name;
+        await permission.save();
+        res.status(200).json({ status: true, message: "Permission updated successfully", data: permission });
+    } catch (err) {
+        console.error("Error updating permission:", err);
+        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    }
+};
+
+exports.deletePermission = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const permission = await Permission.findByPk(id);
+        if (!permission) {
+            return res.status(404).json({ status: false, message: "Permission not found" });
+        }
+        await permission.destroy();
+        res.status(200).json({ status: true, message: "Permission deleted successfully" });
+    } catch (err) {
+        console.error("Error deleting permission:", err);
+        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    }
+};
+
+exports.getPermissions = async (req, res) => {
+   
+    try {
+        const permissions = await Permission.findAll();
+        res.status(200).json({ status: true, message: "Permissions retrieved successfully", data: permissions });
+    } catch (err) {
+        console.error("Error retrieving permissions:", err);
+        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    }
+};
+
+/**
+ * Assign permissions to role
+ * @param {string} req.params.role_id - Role ID
+ * @param {array} req.body.permissions - Permissions array
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @returns {Promise<void>}
+ */
+exports.assignPermissionsToRole = async (req, res) => {
+    try {
+        const { role_id } = req.params;
+        const { permissions } = req.body;
+
+        // Get role by id
+        const role = await Role.findByPk(role_id);
+
+        // check if role exists, if not return 404
+        if (!role) {
+            return res.status(404).json({ status: false, message: "Role not found" });
+        }
+        const getPermissions = await Permission.findAll({
+            attributes: ['id', 'module_id'],
+            where: {
+                id: {
+                    [Op.in]: permissions
+                }
+            }
+        });
+        // check if permissions exists, if not return 404
+        if (getPermissions.length === 0) {
+            return res.status(404).json({ status: false, message: "Permissions not found" });
+        }
+        // Prepare data to be created
+        const rolePermissionstoBeCreated = [];
+        getPermissions.forEach(permission => {
+            rolePermissionstoBeCreated.push({
+                role_id: role_id,
+                permission_id: permission.id,
+                module_id: permission.module_id
+            });
+        });
+
+        // Delete existing role permissions
+        await RolePermission.destroy({
+            where: {
+                role_id: role_id
+            }
+        });
+        // Create new role permissions
+        await RolePermission.bulkCreate(rolePermissionstoBeCreated);
+
+        // Return response
+        res.status(200).json({ status: true, message: "Permissions assigned to role successfully" });
+    } catch (err) {
+        console.error("Error assigning permissions to role:", err);
+        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    }
+};
