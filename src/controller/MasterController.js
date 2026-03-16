@@ -474,3 +474,76 @@ exports.GetActiveMasterBrand = async (req, res) => {
         });
     }
 }
+
+/**
+ * Update a master brand by id
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.UpdateMasterBrand = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description } = req.body;
+
+        // check if master brand with same name already exists
+        const masterBrand = await MasterBrand.findOne({
+            attributes: ['id'],
+            raw: true,
+            where: { id: id, company_id: req.user.company_id },
+        });
+        // if master brand with same name already exists, return error
+        if (!masterBrand) {
+            return res.status(400).json({
+                status: false,
+                message: "Master Brand not found",
+            });
+        }
+        // update master brand
+        await MasterBrand.update({ name, description }, { where: { id } });
+
+        // return success response
+        return res.status(200).json({ status: true, message: "Master Brand updated successfully" });
+    } catch (error) {
+        console.error('Error updating Master Brand:', error);
+        return res.status(500).json({
+            status: false,
+            message: "Error updating Master Brand",
+            error: error.message
+        });
+    }
+}
+
+/**
+ * Delete a master brand by id
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.DeleteMasterBrand = async (req, res) => {
+    try {
+        const { id } = req.params;
+        // check if master brand with same name already exists
+        const masterBrand = await MasterBrand.findOne({
+            attributes: ['id'],
+            raw: true,
+            where: { id: id, company_id: req.user.company_id },
+        });
+        // if master brand with same name already exists, return error
+        if (!masterBrand) {
+            return res.status(404).json({
+                status: false,
+                message: "Master Brand not found",
+            });
+        }
+        // delete master brand
+        await MasterBrand.destroy({ where: { id } });
+        // return success response
+        return res.status(200).json({ status: true, message: "Master Brand deleted successfully" });
+    } catch (error) {
+        console.error('Error deleting Master Brand:', error);
+        return res.status(500).json({
+            status: false,
+            message: "Error deleting Master Brand",
+            error: error.message
+        });
+    }
+}

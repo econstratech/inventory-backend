@@ -510,7 +510,7 @@ exports.GetAllPurchaseRfqStatus = async (req, res) => {
         },
         {
           association: 'createdBy',
-          attributes: ['name'],
+          attributes: ['id', 'name'],
         },
       ],
     });

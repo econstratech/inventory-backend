@@ -234,19 +234,19 @@ const getUserPermissionList = async (user) => {
         where: {
             id: { [Op.in]: roles },
         },
-        raw: true,
-        nest: true,
         include: [{
             association: 'permissions',
             attributes: ['id', 'name', 'module_id'],
-            through: { attributes: [] },
+            through: { attributes: [],  },
         }]
     });
 
     let userModuleIds = [];
     roleDetails.forEach((userRole) => {
-        permissions.push(userRole.permissions.name);
-        userModuleIds.push(userRole.permissions.module_id);
+        userRole.permissions.forEach((permission) => {
+            permissions.push(permission.name);
+            userModuleIds.push(permission.module_id);
+        });
     });
     // Unique module IDs
     userModuleIds = [...new Set(userModuleIds)];

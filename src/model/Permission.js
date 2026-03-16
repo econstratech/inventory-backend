@@ -12,6 +12,10 @@ const Permission = sequelize.define("Permission", {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  label: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   guard_name: {
     type: DataTypes.STRING,
     allowNull: false,
