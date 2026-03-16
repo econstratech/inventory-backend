@@ -74,7 +74,8 @@
  * @swagger
  * /api/update-role/{id}:
  *   post:
- *     summary: Update a role name
+ *     summary: Update a role and its associated permissions
+ *     description: Updates the role name and replaces all associated permissions with the provided list.
  *     tags: [Role Permission]
  *     security:
  *       - bearerAuth: []
@@ -85,6 +86,7 @@
  *         schema:
  *           type: integer
  *         description: Role ID
+ *         example: 3
  *     requestBody:
  *       required: true
  *       content:
@@ -93,13 +95,40 @@
  *             type: object
  *             required:
  *               - name
+ *               - permissions
  *             properties:
  *               name:
  *                 type: string
  *                 example: "Manager"
+ *               permissions:
+ *                 type: array
+ *                 description: Permissions to assign to the role (replaces existing)
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - permission_id
+ *                     - module_id
+ *                   properties:
+ *                     permission_id:
+ *                       type: integer
+ *                       example: 12
+ *                     module_id:
+ *                       type: integer
+ *                       example: 4
+ *           example:
+ *             name: "Manager"
+ *             permissions:
+ *               - permission_id: 12
+ *                 module_id: 4
+ *               - permission_id: 13
+ *                 module_id: 4
  *     responses:
  *       200:
- *         description: Role updated successfully
+ *         description: Role and associated permissions updated successfully
+ *       400:
+ *         description: Role not found or validation error
+ *       500:
+ *         description: Server error
  */
 
 /**
@@ -233,13 +262,91 @@
  * @swagger
  * /api/get-all-permissions:
  *   get:
- *     summary: Get all permissions
+ *     summary: Get all permissions (paginated)
+ *     description: Returns paginated permissions with optional module filter. Only permissions with guard_name "web" are returned.
  *     tags: [Role Permission]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Records per page
+ *         example: 10
+ *       - in: query
+ *         name: module_id
+ *         schema:
+ *           type: integer
+ *         description: Optional filter by module ID
+ *         example: 2
  *     responses:
  *       200:
  *         description: Permissions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Permissions retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                         total_pages:
+ *                           type: integer
+ *                         current_page:
+ *                           type: integer
+ *                         per_page:
+ *                           type: integer
+ *                         has_next_page:
+ *                           type: boolean
+ *                         has_prev_page:
+ *                           type: boolean
+ *                         next_page:
+ *                           type: integer
+ *                           nullable: true
+ *                         prev_page:
+ *                           type: integer
+ *                           nullable: true
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                           name:
+ *                             type: string
+ *                           label:
+ *                             type: string
+ *                           guard_name:
+ *                             type: string
+ *                             example: "web"
+ *                           permission_module:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
  *       500:
  *         description: Server error
  */

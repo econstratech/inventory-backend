@@ -650,6 +650,146 @@
 
 /**
  * @swagger
+ * /api/master/brand/{id}:
+ *   put:
+ *     summary: Update a Master Brand by ID
+ *     description: Updates name and/or description of an existing master brand. Brand must belong to the user's company.
+ *     tags: [Master]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Master Brand ID
+ *         example: 1
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Nike"
+ *                 description: Brand name
+ *               description:
+ *                 type: string
+ *                 example: "Premium athletic footwear and apparel brand"
+ *                 description: Brand description (optional)
+ *           example:
+ *             name: "Nike"
+ *             description: "Premium athletic footwear and apparel brand"
+ *     responses:
+ *       200:
+ *         description: Master Brand updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Master Brand updated successfully"
+ *       400:
+ *         description: Master Brand not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Master Brand not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error updating Master Brand"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/master/brand/{id}:
+ *   delete:
+ *     summary: Delete a Master Brand by ID
+ *     description: Permanently deletes a master brand. Brand must belong to the user's company.
+ *     tags: [Master]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Master Brand ID
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Master Brand deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Master Brand deleted successfully"
+ *       404:
+ *         description: Master Brand not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Master Brand not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error deleting Master Brand"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/master/brand/list:
  *   get:
  *     summary: Get all active master brands

@@ -9,7 +9,9 @@ const {
     GetActiveMasterProductCategory,
     GetActiveMasterAttribute,
     CreateMasterBrand,
-    GetActiveMasterBrand
+    GetActiveMasterBrand,
+    UpdateMasterBrand,
+    DeleteMasterBrand
 } = require("../controller/MasterController");
 const { authToken } = require("../utils/Middleware");
 
@@ -43,5 +45,9 @@ router.get('/product-attribute/list', authToken, GetActiveMasterAttribute);
 router.post('/brand', authToken, CreateMasterBrand);
 // List of all active master brands
 router.get('/brand/list', authToken, GetActiveMasterBrand);
+// Update master brand by id
+router.put('/brand/:id', authToken, UpdateMasterBrand);
+// Delete master brand by id
+router.delete('/brand/:id', authToken, DeleteMasterBrand);
 
 module.exports = router;

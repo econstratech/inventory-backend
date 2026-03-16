@@ -341,17 +341,30 @@ ServiceAuditLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 ServiceAuditLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
 // RolePermission associations
-Permission.belongsTo(Module, { foreignKey: 'module', as: 'permission_module' });
+Permission.belongsTo(Module, { foreignKey: 'module_id', as: 'permission_module' });
 RolePermission.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
 RolePermission.belongsTo(Permission, { foreignKey: 'permission_id', as: 'permission' });
 RolePermission.belongsTo(Module, { foreignKey: 'module_id', as: 'module' });
 
 Role.hasMany(RolePermission, { foreignKey: 'role_id', as: 'rolePermissions' });
 Role.belongsToMany(Permission, {
-    through: RolePermission,
+    through: { 
+        model: RolePermission, 
+        // unique: true 
+    },
     foreignKey: 'role_id',
     otherKey: 'permission_id',
+    // sourceKey: 'id',
+    // targetKey: 'id',
     as: 'permissions'
+});
+Permission.belongsToMany(Role, {
+    through: { model: RolePermission, unique: true },
+    foreignKey: 'permission_id',
+    otherKey: 'role_id',
+    sourceKey: 'id',
+    targetKey: 'id',
+    as: 'roles'
 });
 Permission.hasMany(RolePermission, { foreignKey: 'permission_id', as: 'rolePermissions' });
 Module.hasMany(RolePermission, { foreignKey: 'module_id', as: 'rolePermissions' });

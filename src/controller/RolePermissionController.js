@@ -1,5 +1,7 @@
 const { Op } = require("sequelize");
+const sequelize = require("../database/db-connection");
 const { Role, Permission, Module, RolePermission } = require("../model");
+const CommonHelper = require("../helpers/commonHelper");
 
 
 //Role Curd Operation APi
@@ -39,13 +41,45 @@ exports.GetAllRoles = async (req, res) => {
  * @returns {Promise<void>}
  */
 exports.GetAllPermissions = async (req, res) => {
+    try {
+        const { module_id } = req.query;
+        // pagination params
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const offset = (page - 1) * limit;
 
-    const permission = await Module.findAll({
-        include: [
-            { association: "permissions", attributes: ["id", "name"] },
-        ]
-    })
-    return res.status(200).json({ data: permission })
+        // base where clause
+        const whereClause = {
+            guard_name: "web",
+            ...(module_id && { module_id: parseInt(module_id) })
+        }
+        // Get all permissions
+        const permissions = await Permission.findAndCountAll({
+            attributes: ["id", "name", "label", "guard_name"],
+            where: whereClause,
+            limit,
+            offset,
+            distinct: true,
+            order: [['name', 'ASC']],
+            include: [
+                { association: "permission_module", attributes: ["id", "name"] }
+            ]
+        });
+
+        // Get paginated data
+        const paginatedPermissionData = CommonHelper.paginate(permissions, page, limit);
+
+        // return response
+        return res.status(200).json({ 
+            status: true, 
+            message: "Permissions retrieved successfully", 
+            data: paginatedPermissionData 
+        });
+    } catch (error) {
+        console.error("Error retrieving permissions:", error);
+        return res.status(500).json({ status: false, message: "Internal Server Error", error: error.message });
+    }
+
 }
 
 /**
@@ -108,28 +142,62 @@ exports.CreateRole = async (req, res) => {
  * Update Role
  * @param {string} req.params.id - Role ID
  * @param {string} req.body.name - Role name
+ * @param {array} req.body.permissions - Permissions array
  * @param {Object} res - Response object
  * @param {number} res.status - Response status
  * @param {string} res.message - Response message
  * @returns {Promise<void>}
  */
 exports.UpdateRole = async (req, res) => {
-    const { id } = req.params;
-    const { name } = req.body;
-    const existRole = await Role.findOne({
-        attributes: ['id', 'name'],
-        where: { id: id, company_id: req.user.company_id, is_delete: 0 },
-        raw: true,
-    });
-    // check if role already exists
-    if (existRole) {
-        return res.status(400).json({ status: false, message: "This role name already exist" })
+    let transaction = null;
+    try {
+        const { id } = req.params;
+        const { name, permissions } = req.body;
+    
+        // check if permissions are provided, if not return 400
+        const existRole = await Role.findOne({
+            attributes: ['id', 'name'],
+            where: { id: id, company_id: req.user.company_id, is_delete: 0 },
+            raw: true,
+        });
+        // check if role already exists
+        if (!existRole) {
+            return res.status(400).json({ status: false, message: "Role not found" })
+        }
+        // begin transaction
+        transaction = await sequelize.transaction();
+        // update role
+        await Role.update({ name }, { where: { id }, transaction });
+        // delete existing role permissions
+        await RolePermission.destroy({
+            where: {
+                role_id: id
+            },
+            transaction
+        });
+        // create new role permissions
+        const rolePermissionstoBeCreated = [];
+        permissions.forEach(eachPermission => {
+            rolePermissionstoBeCreated.push({
+                role_id: id,
+                permission_id: eachPermission.permission_id,
+                module_id: eachPermission.module_id
+            });
+        });
+        await RolePermission.bulkCreate(rolePermissionstoBeCreated, { transaction });
+        // commit transaction
+        await transaction.commit();
+    
+        // return response
+        return res.status(200).json({ status: true, message: 'Role & associated permissions has been updated successfully' });
+    } catch (error) {
+        console.error("Error updating role:", error);
+        // rollback transaction
+        if (transaction) {
+            await transaction.rollback();
+        }
+        return res.status(500).json({ status: false, message: "Internal Server Error", error: error.message });
     }
-    // update role
-    await Role.update({ name }, { where: { id } });
-
-    // return response
-    return res.status(200).json({ status: true, message: 'Role has been updated successfully' })
 }
 
 exports.DeleteRole = async (req, res) => {
