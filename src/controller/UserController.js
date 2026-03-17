@@ -516,7 +516,7 @@ exports.ValidateThirdPartyUser = async (req, res) => {
         const bms_user_id = decoded.id;
         // get user details
         const user = await User.findOne({
-            attributes: ['id', 'status', 'company_id', 'role'],
+            attributes: [ 'id', 'name', 'email', 'company_id', 'position', 'role' ],
             where: {
                 bms_user_id: bms_user_id,
                 status: 1,
