@@ -1437,3 +1437,148 @@
  *                 error:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/report/batch-expiration-report:
+ *   get:
+ *     summary: Get batch expiration report with pagination
+ *     description: Returns paginated receive product batches for the company, ordered by expiry_date ascending. Optionally filter by expiry_date to show only batches expiring on or before that date. Each row includes batch details and product variant with UOM and product info.
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *           minimum: 1
+ *         description: Page number
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           minimum: 1
+ *         description: Items per page
+ *         example: 10
+ *       - in: query
+ *         name: expiry_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter batches expiring on or before this date (inclusive)
+ *         example: "2026-12-31"
+ *     responses:
+ *       200:
+ *         description: Batch expiration report fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Batch expiration report fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                           example: 50
+ *                         total_pages:
+ *                           type: integer
+ *                           example: 5
+ *                         current_page:
+ *                           type: integer
+ *                           example: 1
+ *                         per_page:
+ *                           type: integer
+ *                           example: 10
+ *                         has_next_page:
+ *                           type: boolean
+ *                           example: true
+ *                         has_prev_page:
+ *                           type: boolean
+ *                           example: false
+ *                         next_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: 2
+ *                         prev_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: null
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             description: Batch ID
+ *                             example: 1
+ *                           batch_no:
+ *                             type: string
+ *                             example: "BATCH-001"
+ *                           manufacture_date:
+ *                             type: string
+ *                             format: date
+ *                             nullable: true
+ *                           expiry_date:
+ *                             type: string
+ *                             format: date
+ *                             nullable: true
+ *                           available_quantity:
+ *                             type: number
+ *                             description: Available quantity for this batch
+ *                             example: 100
+ *                           productVariant:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               weight_per_unit:
+ *                                 type: number
+ *                               masterUOM:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: integer
+ *                                   name:
+ *                                     type: string
+ *                                   label:
+ *                                     type: string
+ *                               product:
+ *                                 type: object
+ *                                 properties:
+ *                                   id:
+ *                                     type: integer
+ *                                   product_name:
+ *                                     type: string
+ *                                   product_code:
+ *                                     type: string
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting batch expiration report"
+ *                 error:
+ *                   type: string
+ */

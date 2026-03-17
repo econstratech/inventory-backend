@@ -1,6 +1,10 @@
 const { Op, QueryTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
-const { Purchase, StockTransferLog } = require("../model");
+const { 
+  Purchase, 
+  StockTransferLog,
+  ReceiveProductBatch
+} = require("../model");
 const CommonHelper = require("../helpers/commonHelper");
 
 const BATCH_SIZE = 200;
@@ -1111,6 +1115,70 @@ exports.getItemWiseSalesReport = async (req, res) => {
     return res.status(500).json({
       status: false,
       message: "Error getting item-wise sales report",
+      error: error.message,
+    });
+  }
+};
+
+
+/**
+ * Get batch expiration report (company-scoped).
+ * GET /api/report/batch-expiration-report?page=1&limit=10&expiry_date=...
+ * Returns: batch_no, manufacture_date, expiry_date, available_quantity, product_name, product_code, weight_per_unit, uom_name, uom_label.
+ */
+exports.getBatchExpirationReport = async (req, res) => {
+  try {
+    // Get page and limit
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+
+    // Base where condition
+    const whereCondition = { company_id: req.user.company_id };
+    // Add expiry date filter if provided
+    if (req.query.expiry_date) {
+      const expiry_date = new Date(req.query.expiry_date);
+      whereCondition.expiry_date = { [Op.lte]: expiry_date };
+    }
+    // Get batch expiration report
+    const batchExpirationReport = await ReceiveProductBatch.findAndCountAll({
+      attributes: ['id', 'batch_no', 'manufacture_date', 'expiry_date', 'available_quantity'],
+      where: whereCondition,
+      include: [
+        {
+          association: 'productVariant',
+          attributes: ['id', 'weight_per_unit'],
+          include: [
+            {
+              association: 'masterUOM',
+              attributes: ['id', 'name', 'label'],
+            },
+            {
+              association: 'product',
+              attributes: ['id', 'product_name', 'product_code'],
+            }
+          ],
+        },
+      ],
+      order: [['expiry_date', 'ASC']],
+      limit: parseInt(limit, 10),
+      offset,
+    });
+
+    // Get paginated data
+    const paginatedBatchExpirationReport = CommonHelper.paginate(batchExpirationReport, page, limit);
+
+    // return response
+    return res.status(200).json({
+      status: true,
+      message: "Batch expiration report fetched successfully",
+      data: paginatedBatchExpirationReport,
+    });
+  } catch (error) {
+    console.error("Get batch expiration report error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Error getting batch expiration report",
       error: error.message,
     });
   }

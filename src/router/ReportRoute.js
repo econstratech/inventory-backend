@@ -14,7 +14,8 @@ const {
     getStatusWiseSalesReport,
     getCustomerWiseTotalSalesOfThisMonth,
     getCustomerWiseSalesReport,
-    getItemWiseSalesReport
+    getItemWiseSalesReport,
+    getBatchExpirationReport
 } = require("../controller/ReportController");
 const { authToken } = require("../utils/Middleware");
 
@@ -36,5 +37,8 @@ router.get("/status-wise-sales-report", authToken, getStatusWiseSalesReport);
 router.get("/customer-wise-total-sales-of-this-month", authToken, getCustomerWiseTotalSalesOfThisMonth);
 router.get("/customer-wise-sales-report", authToken, getCustomerWiseSalesReport);
 router.get("/item-wise-sales-report", authToken, getItemWiseSalesReport);
+
+
+router.get("/batch-expiration-report", authToken, getBatchExpirationReport);
 
 module.exports = router;
