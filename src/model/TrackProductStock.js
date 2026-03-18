@@ -1,7 +1,7 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
-module.exports = sequelize.define(
+const TrackProductStock = sequelize.define(
     'TrackProductStock',
     {
         product_id: {
@@ -76,3 +76,5 @@ module.exports = sequelize.define(
         updatedAt: 'updated_at',
     },
 );
+
+module.exports = TrackProductStock;

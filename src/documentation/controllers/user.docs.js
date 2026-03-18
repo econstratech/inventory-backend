@@ -232,6 +232,77 @@
 
 /**
  * @swagger
+ * /api/user/update-user-roles:
+ *   post:
+ *     summary: Update user roles
+ *     description: Updates the role assignments for a user. User must belong to the authenticated user's company. Role must be a valid JSON string of role IDs array.
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - id
+ *               - role
+ *             properties:
+ *               id:
+ *                 type: integer
+ *                 description: User ID to update
+ *                 example: 159
+ *               role:
+ *                 type: string
+ *                 description: JSON string of role IDs array
+ *                 example: "[3,11,8,5,7,9,2,10,4,6]"
+ *     responses:
+ *       200:
+ *         description: User roles updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "User roles updated successfully"
+ *       400:
+ *         description: Roles required or invalid role format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Roles are required"
+ *                 error:
+ *                   type: string
+ *       404:
+ *         description: User not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "User not found"
+ */
+
+/**
+ * @swagger
  * /api/user/change-password:
  *   post:
  *     summary: Change user password

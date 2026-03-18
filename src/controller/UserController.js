@@ -1,4 +1,3 @@
-const Joi = require('joi');
 const bcrypt = require('bcrypt');
 const { Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
@@ -382,8 +381,8 @@ exports.UpdateUserRoles = async (req, res) => {
         if (!role) {
             return res.status(400).json({ status: false, message: "Roles are required" });
         }
-        // check if roles are valid, if not return 400
-        const roles = JSON.parse(role);
+        // check if roles type is array, convert it into string
+        const roles = typeof role !== 'string' ? JSON.stringify(role) : role;
         // update user roles
         await User.update({ role: roles }, {
             where: { id: user.id }
@@ -391,8 +390,13 @@ exports.UpdateUserRoles = async (req, res) => {
         // return response
         return res.status(200).json({ status: true, message: "User roles updated successfully" });
     } catch (err) {
+        console.error("Update user roles error:", err);
         // return error
-        return res.status(400).json(err);
+        return res.status(400).json({
+            status: false,
+            message: "Error updating user roles",
+            error: err.message
+        });
     }
 }
 

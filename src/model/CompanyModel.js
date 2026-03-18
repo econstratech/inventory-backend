@@ -1,58 +1,63 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
-const CompanyModel = sequelize.define(
-  "Company",
-  {
-    company_name: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    company_email: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    company_phone: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    p_isd: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
+// const CompanyModel = sequelize.define(
+//   "Company",
+//   {
+//     company_name: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//     company_email: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//     company_phone: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//     p_isd: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
 
-    address: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    logo: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
+//     address: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//     logo: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
 
-    whatsapp_number: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-    gst: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-  },
-  {
-    tableName: "companies",
-    timestamps: true,
-    createdAt: "created_at",
-    updatedAt: "updated_at",
-  }
-);
+//     whatsapp_number: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//     gst: {
+//       type: DataTypes.STRING,
+//       allowNull: true,
+//     },
+//   },
+//   {
+//     tableName: "companies",
+//     timestamps: true,
+//     createdAt: "created_at",
+//     updatedAt: "updated_at",
+//   }
+// );
 
 const GeneralSettings = sequelize.define(
   "GeneralSettings",
   {
+    id: {
+      type: DataTypes.BIGINT,
+      allowNull: false,
+      autoIncrement: true,
+      primaryKey: true,
+    },
     company_id: {
-      type: DataTypes.INTEGER,
-      primaryKey: true, // Ensure this or an appropriate unique constraint
+      type: DataTypes.BIGINT,
       allowNull: false,
     },
     currency_code: {
@@ -139,6 +144,11 @@ const GeneralSettings = sequelize.define(
       type: DataTypes.DECIMAL,
       allowNull: true
     },
+    is_variant_based: {
+      type: DataTypes.SMALLINT,
+      allowNull: true,
+      defaultValue: 1,
+    },
   },
   {
     tableName: "general_settings",
@@ -154,4 +164,4 @@ const GeneralSettings = sequelize.define(
   }
 );
 
-module.exports = { CompanyModel, GeneralSettings };
+module.exports = {  GeneralSettings };
