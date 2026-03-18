@@ -21,7 +21,8 @@
  * @swagger
  * /api/company/create-company:
  *   post:
- *     summary: Create a new company
+ *     summary: Create a new company with owner user
+ *     description: Creates a new company with default office time, notification settings, and general settings. Also creates an owner user and links it to the company.
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
@@ -31,16 +32,110 @@
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - company_name
+ *               - company_email
+ *               - company_phone
+ *               - isd
+ *               - address
+ *               - whatsapp_no
+ *               - w_isd
+ *               - password
  *             properties:
- *               name:
+ *               company_name:
  *                 type: string
- *               email:
+ *                 description: Company name
+ *                 example: "Acme Corp"
+ *               company_email:
  *                 type: string
+ *                 format: email
+ *                 description: Company email (must be unique)
+ *                 example: "company@acme.com"
+ *               company_phone:
+ *                 type: string
+ *                 description: Company phone number
+ *                 example: "9876543210"
+ *               isd:
+ *                 type: string
+ *                 description: ISD code for phone (default +91)
+ *                 example: "+91"
  *               address:
  *                 type: string
+ *                 description: Company address
+ *                 example: "123 Main Street, City"
+ *               whatsapp_no:
+ *                 type: string
+ *                 description: Company WhatsApp number
+ *                 example: "9876543210"
+ *               w_isd:
+ *                 type: string
+ *                 description: ISD code for WhatsApp (default +91)
+ *                 example: "+91"
+ *               password:
+ *                 type: string
+ *                 format: password
+ *                 description: Owner user password
+ *               renew_date:
+ *                 type: string
+ *                 format: date
+ *                 nullable: true
+ *                 description: Company renewal date
+ *               contact_name:
+ *                 type: string
+ *                 description: Primary contact name (used for owner user)
+ *                 example: "John Doe"
+ *               contact_email:
+ *                 type: string
+ *                 format: email
+ *                 description: Primary contact email
+ *               contact_phone:
+ *                 type: string
+ *                 description: Primary contact phone
+ *               contact_whatsapp_no:
+ *                 type: string
+ *                 description: Primary contact WhatsApp number
+ *               is_variant_based:
+ *                 type: integer
+ *                 enum: [0, 1]
+ *                 default: 1
+ *                 description: Whether product is variant-based (1) or not (0)
+ *               name:
+ *                 type: string
+ *                 description: Owner user display name (fallback for contact_name)
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Owner user email (fallback for contact_email)
  *     responses:
  *       200:
  *         description: Company created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 msg:
+ *                   type: string
+ *                   example: "New company has been created"
+ *       400:
+ *         description: Validation error or company already exists
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 msg:
+ *                   type: string
+ *                   example: "Please fill all field"
+ *                 message:
+ *                   type: string
+ *                   example: "This company name already exist !"
  */
 
 /**

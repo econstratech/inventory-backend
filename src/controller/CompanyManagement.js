@@ -1,15 +1,16 @@
 
 
-const Company = require("../model/Company")
-const { GeneralSettings, CompanyModel } = require("../model/CompanyModel")
-
-const User = require("../model/User")
+const { Op } = require("sequelize");
 const bcrypt = require('bcrypt');
 
+
+const sequelize = require("../database/db-connection");
+const { GeneralSettings, Company, User } = require("../model")
 const OfficeTimeModel = require("../model/OfficeTimeModel")
 const NotificationSettingModel = require("../model/NotificationSettingModel")
 const CommonHelper = require("../helpers/commonHelper")
-const { Op } = require("sequelize");
+
+
 
 
 
@@ -127,18 +128,7 @@ exports.CretaeUserAPi = async (req, res) => {
             status: 1,
             position: "Customer",
             company_id: companyManage.id
-        })
-
-        /*
-        await GUserModel.create({
-            name,
-            email,
-            password: hasPassword,
-            contact_no: phone,
-            company_id: GcompanyId.id,
-            whats_app_number: wsnumber,
-        })
-        */
+        });
 
         return res.status(200).json({ msg: "New user has been created" })
     } catch (err) {
@@ -146,50 +136,85 @@ exports.CretaeUserAPi = async (req, res) => {
     }
 }
 
+/**
+ * Create a new company with owner user and office time
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
 exports.CreateCompany = async (req, res) => {
+    let transaction = null;
     try {
+        // sanitize the request body
+        const { 
+            company_name, 
+            company_email, 
+            company_phone, 
+            isd, 
+            address, 
+            whatsapp_no, 
+            w_isd, 
+            password, 
+            renew_date,
+            contact_name,
+            contact_email,
+            contact_phone,
+            contact_whatsapp_no,
+            is_variant_based
+        } = req.body;
 
-        const { name, email, phone, isd, address, whatsapp_no, w_isd, password, owner_name, amount, renew_date, contact_person_name, contact_person_email, contact_person_contact_no, contact_person_isd, contact_person_whats_app_number, contact_person_wid } = req.body;
-        if (!name || !email || !phone || !isd || !address || !whatsapp_no || !w_isd || !password) {
+        // validate the request body
+        if (!company_name || !company_email || !company_phone || !isd || !address || !whatsapp_no || !w_isd || !password || !contact_phone) {
             return res.status(400).json({ msg: "Please fill all field" })
         }
+        // check if company already exists, if exists then return error
         const Existcompany = await Company.findOne({
-            where: { company_email: req.body.email }
+            attributes: ['id'],
+            where: { company_email: company_email },
+            raw: true,
         })
         if (Existcompany) {
             return res.status(400).json({ msg: "This company name already exist !" })
         }
+
+        // begin transaction
+        transaction = await sequelize.transaction();
+
+        // create the company
         const company = await Company.create({
-            company_name: req.body.name,
-            company_email: req.body.email,
-            company_phone: phone,
-            c_p_isd: req.body.isd,
-            address: req.body.address,
-            whatsapp_no: whatsapp_no,
+            company_name: company_name.trim(),
+            company_email: company_email ? company_email.trim() : null,
+            company_phone: company_phone ? company_phone.trim() : null,
+            c_p_isd: isd ?? '+91',
+            address: address ? address.trim() : null,
+            whatsapp_no: whatsapp_no ?? null,
             renew_date: renew_date,
-            contact_name: contact_person_name,
-            contact_email: contact_person_email,
-            contact_phone: contact_person_contact_no,
-            p_isd: contact_person_isd,
-            whatsapp_number: contact_person_whats_app_number,
-            w_isd: contact_person_wid
-        })
+            contact_name: contact_name ? contact_name.trim() : null,
+            contact_email: contact_email ? contact_email.trim() : null,
+            contact_phone: contact_phone ? contact_phone.trim() : null,
+            p_isd: isd ?? '+91',
+            whatsapp_number: contact_whatsapp_no ?? null,
+            w_isd: w_isd ?? '+91'
+        }, { transaction });
 
 
-        const user = await User.create({
-            name: req.body.name,
-            username: req.body.name,
-            phone_number: phone,
-            p_isd: req.body.isd,
-            whatsapp_no: whatsapp_no,
+        // Create owner user
+        await User.create({
+            name: contact_name ?? null,
+            username: contact_email ?? null,
+            position: 'Owner',
+            phone_number: contact_phone ?? null,
+            p_isd: isd ?? '+91',
+            whatsapp_no: whatsapp_no ?? null,
             w_isd: w_isd,
-            email: req.body.email,
+            email: contact_email ?? null,
             user_password: await bcrypt.hash(password, 10),
             company_id: company.id,
-            role: JSON.stringify([3, 11, 8, 5, 7, 9, 2, 10, 4, 6]),
+            role: JSON.stringify([]),
             status: 1,
-        })
+        }, { transaction });
 
+        // Create office time
         await OfficeTimeModel.create({
             company_id: company.id,
             start_time: "10:00:00",
@@ -197,34 +222,37 @@ exports.CreateCompany = async (req, res) => {
             first_day_of_week: 1,
             working_days: JSON.stringify(["1"]),
             no_of_working_days: 1,
-        })
+        }, { transaction });
 
         await NotificationSettingModel.create({
             company_id: company.id
-        })
+        }, { transaction });
         await GeneralSettings.create({
+            is_variant_based: is_variant_based ?? 1, // default is 1 for variant based
             timezone: 'Asia/Calcutta',
             currency_name: 'Indian Rupee',
             currency_code: 'INR',
             symbol: '₹',
-            companyAddress: req.body.address,
-            deliveryAddress: req.body.address,
+            companyAddress: address.trim(),
+            deliveryAddress: address.trim(),
             template: 'template1',
             signature: '',
             company_id: company.id,
-        });
+        }, { transaction });
 
-        // await UserPermissionModel.create({
-        //     user_id: user.id,
-        //     permission_name: JSON.stringify(["View Users", "User", "Edit User", "Delete User", "Add WorkFlow Task", "WorkFlow", "View WorkFlow", "Edit WorkFlow", "Delete WorkFlow", "Add CheckSheet", "CheckSheet", "View CheckSheet", "Delete CheckSheet", "View CheckSheet Tasks", "Add TaskTracker", "TaskTracker", "Edit TaskTracker", "Delete TaskTracker", "View TaskTracker", "Create WorkFlow", "View WorkFlow Tasks", "Change Task Priority", "Task", "Close Task", "Switch Task", "Add Role", "Role", "Edit Role", "Delete Role", "Add Department", "Department", "View Departments", "Edit Department", "Delete Department", "View Performance Score", "Report", "Edit Office Time", "Miscellaneous", "Add Holiday", "Holiday", "View Holiday", "Edit Holiday", "Delete Holiday", "View Employee KPI", "View Bottle Neck", "Task Re-Open", "System Controller", "Advance Controller", "Auditor", "Change Password", "Change Photo", "Create Table", "Master Table", "Update Table", "Delete Table", "Raised To Me", "Help Ticket", "Raised By Me", "WhatsApp Settings", "General Notification", "Company Info", "Edit CheckSheet", "Dynamic Report"]),
-        //     role_id: 3,
-        //     permission_id: JSON.stringify([4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 42, 43, 44, 45, 47, 50, 52, 53, 54, 55, 56, 57, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73]),
-        //     company_id: company.id
-        // })
+        // commit the transaction
+        await transaction.commit();
 
-        return res.status(200).json({ success: true, msg: "New company has been created" })
+        // return the success response
+        return res.status(200).json({ success: true, message: "New company has been created" })
     } catch (error) {
-        return res.send({ success: false, message: "Error while creating company", error });
+        // rollback the transaction if error occurs
+        if (transaction) {
+            await transaction.rollback();
+        }
+        console.log("Error while creating company:", error);
+        // return the error response
+        return res.status(400).json({ success: false, message: "Error while creating company", error });
     }
 }
 
@@ -248,66 +276,6 @@ exports.UserList = async (req, res) => {
                 is_active: 0
             }
         })
-
-        // const allDetailTask = await Promise.all(userAllList.map(async (task) => {
-
-        //     const Task = await TaskTracker.findAll({
-        //         where: {
-        //             [Op.or]: [
-        //                 { assigned_by: task.id },
-        //                 { assign_to: task.id },
-        //             ],
-        //             isDelete: 0,
-        //             delegation_status_id: {
-        //                 [Op.or]: [1, 2]
-        //             },
-        //         }
-        //     });
-
-        //     const Checksheet = await CheckSheetTask.findAll({
-        //         where: {
-        //             doer_id: task.id,
-        //             isDelete: 0,
-        //             status: {
-        //                 [Op.or]: [1, 2]
-        //             },
-        //         }, include: [
-        //             {
-        //                 model: CheckSheet, as: "checkSheetList"
-        //             }]
-        //     });
-
-        //     const fmsInitiate = await FmsTaskStepModel.findAll({
-        //         where: {
-        //             status: { [Op.or]: [1, 2] },
-        //             is_delete: 0,
-        //             user_id: task.id
-        //         },
-        //     });
-        //     const tasksWithDetails = await Promise.all(fmsInitiate.map(async (task) => {
-        //         const step = await FmStepDetailsModel.findOne({
-        //             where: { id: task.step_id }
-        //         });
-        //         const fms = await FmsDetailsModel.findOne({
-        //             where: { id: task.fms_id }
-        //         });
-
-        //         return {
-        //             ...task.toJSON(),
-        //             step: step ? step.toJSON() : null,
-        //             fms: {
-        //                 ...fms.toJSON(),
-        //             }
-        //         };
-        //     }));
-
-        //     return {
-        //         ...task.toJSON(),
-        //         Task: Task ? Task : null,
-        //         Checksheet: Checksheet ? Checksheet : null,
-        //         fms: tasksWithDetails ? tasksWithDetails : null,
-        //     };
-        // }));
 
         return res.status(200).json({ success: true, data: allDetailTask })
     } catch (err) {
@@ -346,31 +314,6 @@ exports.UserListCompanyWise = async (req, res) => {
             order: [["name", "ASC"]]
         });
         return res.status(200).json({ success: true, data: user })
-    } catch (err) {
-        return res.status(400).json({ success: false, message: err })
-    }
-}
-
-exports.ExtraTableData = async (req, res) => {
-    try {
-        const data = await CompanyModel.findOne({ where: { company_id: req.params.id } });
-        return res.status(200).json({ success: true, data: data });
-    } catch (err) {
-        return res.status(400).json({ success: false, message: err })
-    }
-}
-exports.RenewUpdate = async (req, res) => {
-    try {
-        const data = await CompanyModel.update({
-            tasktracker: req.body.tasktracker,
-            checksheet: req.body.checksheet,
-            workflow: req.body.workflow,
-            helpticket: req.body.helpticket,
-            renew_date: new Date(req.body.renew_date),
-        }, {
-            where: { company_id: req.params.id }
-        });
-        return res.status(200).json({ success: true, message: "Company Data has been updated" })
     } catch (err) {
         return res.status(400).json({ success: false, message: err })
     }

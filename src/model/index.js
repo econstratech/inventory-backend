@@ -40,15 +40,15 @@ const StockTransferLog = require('./StockTransferLog');
 const StockTransferProducts = require('./StockTransferProducts');
 const TrackBatchProductLog = require('./TrackBatchProductLog');
 const StockTransferBatch = require('./StockTransferBatch');
-const { GeneralSettings, CompanyModel } = require('./CompanyModel');
+const { GeneralSettings } = require('./CompanyModel');
 const ProductVariant = require('./ProductVariant');
 const ServiceAuditLog = require('./ServiceAuditLog');
 
-User.belongsTo(CompanyModel, {
+User.belongsTo(Company, {
     foreignKey: 'company_id',
     as: 'company'
 });
-CompanyModel.hasOne(GeneralSettings, {
+Company.hasOne(GeneralSettings, {
     foreignKey: 'company_id',
     as: 'generalSettings'
 });
@@ -408,7 +408,6 @@ module.exports = {
     StockTransferProducts,
     TrackBatchProductLog,
     StockTransferBatch,
-    CompanyModel,
     GeneralSettings,
     ProductVariant,
     ServiceAuditLog,
