@@ -94,10 +94,14 @@ const User = sequelize.define(
 //         user.user_password = await bcrypt.hash(user.user_password, 10);
 //     }
 // });
-
-User.generateToken = function ({ id, name, email,company_id, timezone, currency_code, currency_symbol, currency_name,position }) {
+/**
+ * Generate a JWT token for the user
+ * @param {Object} payload - The payload to be signed
+ * @returns {string} The generated token
+ */
+User.generateToken = function (payload) {
     const token = jwt.sign(
-        { id, name, email,company_id, timezone, currency_code, currency_symbol, currency_name ,position }, 
+        payload, 
         process.env.JWT_TOKEN, 
         { expiresIn: process.env.JWT_TOKEN_EXPIRATION_TIME || '24h' }
     );

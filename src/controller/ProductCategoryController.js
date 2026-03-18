@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { User, ProductCategory } = require("../model");
+const { ProductCategory } = require("../model");
 
 const XLSX = require('xlsx');
 const csv = require('csv-parser');
@@ -99,23 +99,31 @@ exports.CreateProductCategory = async (req, res) => {
 
 exports.UpdateProductCat = async (req, res) => {
     try {
-      const { error } = await ProductCategory.validate({
-        "title": req.body.catname,
-    });
-    if (error) {
-      return res.status(400).json({ error: error.details });
-  }
-        const productId = req.params.id;
-        await ProductCategory.update(
-            {  title: req.body.catname,
-                status: req.body.status,
-             },
-            { where: { id: productId } }
-          );
+      const productId = req.params.id;
+      const { title, status } = req.body;
+      // Check if the category already exists
+      const existingCategory = await ProductCategory.findOne({
+        attributes: ['id'],
+        where: { title: title, company_id: req.user.company_id },
+        raw: true,
+      });
+      if (existingCategory) {
+        return res.status(400).json({ status: false, message: "Product category with this name already exists" });
+      }
+      // Update the category
+      await ProductCategory.update(
+          {  
+            title: title,
+            status: status,
+          },
+          { where: { id: productId } }
+        );
 
-        return res.status(200).json({ status: true, message: "Record Updated" });
+      // Return success response
+      return res.status(200).json({ status: true, message: "Record Updated" });
     } catch (err) {
-        return res.status(400).json(err)
+        console.error("Error updating product category:", err);
+        return res.status(400).json({ status: false, message: "Unable to update product category", error: err.message });
     }
 
 }

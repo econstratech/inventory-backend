@@ -1,8 +1,13 @@
 const { Op, fn, col, literal } = require("sequelize");
 
-// const Product = require("../model/Product");
+const XLSX = require("xlsx");
+const csv = require("csv-parser");
+const path = require("path");
 const axios = require("axios");
+const moment = require('moment');
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+
+const sequelize = require("../database/db-connection");
 
 const { 
   Product,
@@ -23,22 +28,14 @@ const {
   Purchase,
   MasterUOM,
   SalesProductReceived,
-  GeneralSettings
 } = require("../model");
 // const { CompressImage } = require("../utils/ImageUpload");
-const MasteruomModel = require("../model/MasteruomModel");
 const CommonHelper = require('../helpers/commonHelper');
 
-const XLSX = require("xlsx");
-const csv = require("csv-parser");
-const fs = require("fs");
-const path = require("path");
+
 // const { error } = require("console");
 const TrackProductStock = require("../model/TrackProductStock");
 const generateUniqueReferenceNumber = require("../utils/generateReferenceNumber");
-const sequelize = require("../database/db-connection");
-const moment = require('moment');
-
 const { GupShupMessage } = require("../utils/GupShupMessage");
 
 
@@ -432,6 +429,10 @@ exports.AddProduct = async (req, res) => {
       markup_percentage,
     }, { transaction });
 
+    // Check if company is set to variant based
+    const isVariantBased = req.user.is_variant_based;
+
+    // Set product attribute values before saving product attribute values
     const productAttributeValues = [];
     dynamic_attributes.forEach((eachAttributerow) => {
       if (eachAttributerow.value.trim() !== '') {
@@ -446,45 +447,27 @@ exports.AddProduct = async (req, res) => {
     // Save attribute values
     await ProductAttributeValue.bulkCreate(productAttributeValues, { transaction });
 
+    // Save product variants if company is set to variant based
     const productVariants = [];
-    product_variants.forEach((eachVariant) => {
-      productVariants.push({
-        company_id: companyId,
-        user_id: req.user.id,
-        product_id: productData.id,
-        uom_id: eachVariant.uom_id,
-        weight_per_unit: eachVariant.weight
+    if (isVariantBased) {
+      product_variants.forEach((eachVariant) => {
+        productVariants.push({
+          company_id: companyId,
+          user_id: req.user.id,
+          product_id: productData.id,
+          uom_id: eachVariant.uom_id,
+          weight_per_unit: eachVariant.weight
+        });
       });
-    });
-
-    // Save product variants
-    await ProductVariant.bulkCreate(productVariants, { transaction });
+      await ProductVariant.bulkCreate(productVariants, { transaction });
+    }
 
     await transaction.commit();
-
-    // Fetch newly created product data
-    // const product = await Product.findOne({
-    //   attributes: ['id', 'product_code', 'product_name', 'product_type_id', 'uom_id', 'buffer_size', 'is_batch_applicable'],
-    //   where: { id: productData.id },
-    //   include: [
-    //     {
-    //       association: 'productAttributeValues',
-    //       attributes: ['id', 'product_attribute_id', 'value'],
-    //       include: [
-    //         {
-    //           association: 'productAttribute',
-    //           attributes: ['id', 'name', 'is_required']
-    //         }
-    //       ]
-    //     }
-    //   ]
-    // });
 
     // Return product data with success message
     return res.status(200).json({
       status: true,
       message: "Product has been added successfully",
-      // data: product
     });
   } catch (error) {
     const errorMessage = error.message ? error.message : "Error adding product:";
@@ -870,9 +853,8 @@ exports.GetAllDeletedProducts = async (req, res) => {
           attributes: ["title"],
         },
         {
-          model: MasteruomModel,
-          as: "Masteruom",
-          attributes: ["unit_name"],
+          association: "masterUOM",
+          attributes: ["name", "label"],
         },
         {
           model: TrackProductStock,
@@ -1134,12 +1116,12 @@ exports.GetProductsActivity = async (req, res) => {
   try {
     const getAllProduct = await Product.findAll({
       where: {
-        id: productId,
+        company_id: req.user.company_id,
       },
       order: [["id", "DESC"]],
       include: [
         { model: ProductCategory, as: "Categories", attributes: ["title"] },
-        { model: MasteruomModel, as: "Masteruom", attributes: ["unit_name"] },
+        { association: "masterUOM", attributes: ["name", "label"] },
         { model: TrackProductStock, as: "TrackProductStock" },
       ],
     });
@@ -1940,7 +1922,6 @@ exports.getDeadStockReport = async (req, res) => {
           required: false,
         },
         {
-          model: MasteruomModel,
           as: "Masteruom",
           attributes: ["unit_name"],
         },
@@ -2480,12 +2461,11 @@ exports.generateProductReport = async (req, res) => {
       where: { company_id: req.user.company_id, status: 1 },
       include: [
         {
-          model: ProductCategories,
+          model: ProductCategory,
           as: 'Categories',
           attributes: ['title']
         },
         {
-          model: MasteruomModel,
           as: 'Masteruom',
           attributes: ['unit_name']
         },

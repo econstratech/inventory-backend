@@ -151,7 +151,8 @@ exports.Login = async (req, res) => {
                                 'currency_name', 
                                 'currency_code', 
                                 'min_purchase_amount',
-                                'min_sale_amount' 
+                                'min_sale_amount',
+                                'is_variant_based'
                             ],
                         }
                     ]
@@ -189,6 +190,9 @@ exports.Login = async (req, res) => {
             currency_symbol: user.company.generalSettings.symbol,
             currency_name: user.company.generalSettings.currency_name,
             currency_code: user.company.generalSettings.currency_code,
+            is_variant_based: user.company.generalSettings.is_variant_based === 1 ? true : false,
+            min_purchase_amount: user.company.generalSettings.min_purchase_amount,
+            min_sale_amount: user.company.generalSettings.min_sale_amount,
             position: user.position,
         });
 
@@ -538,7 +542,8 @@ exports.ValidateThirdPartyUser = async (req, res) => {
                                 'currency_name', 
                                 'currency_code', 
                                 'min_purchase_amount',
-                                'min_sale_amount' 
+                                'min_sale_amount',
+                                'is_variant_based'
                             ],
                         }
                     ]
