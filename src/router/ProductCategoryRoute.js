@@ -16,7 +16,7 @@ const router = express.Router();
 router.post('/',authToken, CreateProductCategory);
 router.get("/",authToken,GetAllProductCategories);
 // router.get("/all-products-catupdate/:id",authToken, GetAllProductscatupdate);
-router.put("/updatecat/:id",authToken,UpdateProductCat);
+router.put("/update/:id",authToken,UpdateProductCat);
 router.delete('/:id',authToken, DeleteProductscat);
 router.post('/upload', authToken, upload.single('file'), UploadCategory);
 
