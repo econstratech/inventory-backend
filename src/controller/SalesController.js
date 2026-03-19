@@ -1262,6 +1262,7 @@ exports.receiveSalesProduct = async (req, res) => {
   let transaction = null;
   try {
     // Get the sales product
+    const user_id = req.user.id;
     const salesProduct = await SalesProduct.findOne({
       attributes: [
         'id', 
@@ -1368,7 +1369,7 @@ exports.receiveSalesProduct = async (req, res) => {
       product_variant_id: product_variant_id,
       warehouse_id: warehouse_id,
       company_id: req.user.company_id,
-      received_by: req.user.id,
+      received_by: user_id,
       received_quantity: parseInt(quantity),
       unit_price: unit_price,
       tax: parseInt(salesProduct.tax),
@@ -1392,7 +1393,7 @@ exports.receiveSalesProduct = async (req, res) => {
     }
 
     // update the stock entry (increase quantity & decrease sale_order_recieved)
-    await updateStockEntry(warehouse_id, product_id, product_variant_id, quantity, 10, transaction);
+    await updateStockEntry(sales_id, warehouse_id, product_id, product_variant_id, quantity, 10, user_id, transaction);
 
     // commit the transaction
     await transaction.commit();
@@ -1657,7 +1658,7 @@ exports.dispatchProduct = async (req, res) => {
 
     // check if the product is already dispatched
     const salesProduct = await SalesProduct.findOne({
-      attributes: ['id', 'sales_id', 'product_id', 'status', 'qty'],
+      attributes: ['id', 'sales_id', 'product_id', 'product_variant_id', 'status', 'qty'],
       raw: true,
       nest: true,
       where: {
@@ -1682,6 +1683,8 @@ exports.dispatchProduct = async (req, res) => {
       return res.status(400).json({ message: "Product already dispatched" });
     }
 
+    const user_id = req.user.id;
+
     transaction = await sequelize.transaction();
 
     // update the product status to dispatched
@@ -1691,7 +1694,7 @@ exports.dispatchProduct = async (req, res) => {
     });
 
     // update the stock entry (increase quantity & decrease sale_order_recieved)
-    await updateStockEntry(salesProduct.sale.warehouse_id, salesProduct.product_id, salesProduct.qty, 10, transaction);
+    await updateStockEntry(salesProduct.sale.id, salesProduct.sale.warehouse_id, salesProduct.product_id, salesProduct.product_variant_id, salesProduct.qty, 10, user_id, transaction);
 
     // commit the transaction
     await transaction.commit();
@@ -4019,6 +4022,7 @@ exports.ApprovedByManagement = async (req, res) => {
   try {
     const { id } = req.params;
     const { products, remarks } = req.body;
+    const user_id = req.user.id;
 
     // Validate sales quotation exists
     const sale = await Sale.findOne({
@@ -4060,7 +4064,7 @@ exports.ApprovedByManagement = async (req, res) => {
         promises.push(SalesProduct.update(
           {
             product_id: product.product_id,
-            product_variant_id: product.product_variant_id,
+            product_variant_id: product?.product_variant_id ?? null,
             qty: product.qty,
             unit_price: product.unit_price,
             tax: product.tax,
@@ -4075,7 +4079,7 @@ exports.ApprovedByManagement = async (req, res) => {
         ));
 
         // Update the stock entry
-        promises.push(updateStockEntry(sale.warehouse_id, product.product_id, product.product_variant_id, product.qty, 9, transaction));
+        promises.push(updateStockEntry(sale.warehouse_id, product.product_id, product?.product_variant_id, product.product_variant_id, product.qty, 9, user_id, transaction));
       });
     }
 
@@ -4120,14 +4124,23 @@ exports.ApprovedByManagement = async (req, res) => {
   }
 };
 
-const updateStockEntry = async (warehouse_id, product_id, product_variant_id, quantity, status, transaction = false) => {
+const updateStockEntry = async (sales_id, warehouse_id, product_id, product_variant_id = null, received_quantity, status, user_id, transaction = false) => {
   return new Promise(async (resolve, reject) => {
   try {
     // check if the stock entry exists
     const stockEntry = await ProductStockEntry.findOne({
-      attributes: ['id', 'quantity', 'sale_order_recieved'],
-      where: { warehouse_id, product_id, product_variant_id },
-      raw: true,
+      attributes: ['id', 'quantity', 'sale_order_recieved', 'company_id'],
+      where: { 
+        warehouse_id, 
+        product_id, 
+        product_variant_id: product_variant_id ?? { [Op.is]: null }
+      },
+      include: [
+        {
+          association: 'product',
+          attributes: ['id', 'product_name'],
+        }
+      ]
     });
     if (!stockEntry) {
       return reject(new Error("Stock entry not found"));
@@ -4136,18 +4149,69 @@ const updateStockEntry = async (warehouse_id, product_id, product_variant_id, qu
       // update the stock entry
       // Add sale order recieved quantity to the stock entry when order is sent to floor manager
       await ProductStockEntry.update({
-        sale_order_recieved: stockEntry.sale_order_recieved + quantity,
-        quantity: stockEntry.quantity + quantity,
+        sale_order_recieved: stockEntry.sale_order_recieved + received_quantity,
+        quantity: stockEntry.quantity + received_quantity,
       }, { 
         where: { id: stockEntry.id },
         ...(transaction ? { transaction } : {})
       });
     } else if (status === 10) {
-      // update the stock entry
+      const saleProduct = await SalesProduct.findOne({
+        attributes: ['id', 'product_id', 'unit_price', 'qty'],
+        where: { 
+          sales_id: sales_id, 
+          product_id: product_id,
+          product_variant_id: product_variant_id ?? { [Op.is]: null }
+        },
+        raw: true,
+      });
+      // get the sum of track product stock in and out for the product
+      const [stockIn, stockOut] = await Promise.all([
+        TrackProductStock.sum("quantity_changed", {
+          where: {
+            product_id: product_id,
+            company_id: stockEntry.company_id,
+            product_variant_id: product_variant_id ?? { [Op.is]: null },
+            store_id: warehouse_id,
+            status_in_out: 1,
+          },
+          ...(transaction ? { transaction } : {})
+        }),
+        TrackProductStock.sum("quantity_changed", {
+          where: {
+            product_id: product_id,
+            company_id: stockEntry.company_id,
+            store_id: warehouse_id,
+            product_variant_id: product_variant_id ?? { [Op.is]: null },
+            status_in_out: 0,
+          },
+          ...(transaction ? { transaction } : {})
+        })
+      ]);
+
+      // create a new track product stock out entry
+      const referenceNumber = "INV" + Math.floor(1000000 + Math.random() * 9000000);
+      const barcodeNumber = Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString();
+      await TrackProductStock.create({
+        product_id,
+        store_id: warehouse_id,
+        user_id: user_id,
+        company_id: stockEntry.company_id,
+        product_variant_id: product_variant_id ?? null,
+        item_name: stockEntry.product.product_name,
+        default_price: saleProduct?.unit_price || null,
+        item_unit: saleProduct?.qty || null,
+        quantity_changed: received_quantity,
+        final_quantity: (stockIn || 0) - (stockOut || 0) - received_quantity,
+        status_in_out: 0,
+        reference_number: referenceNumber,
+        barcode_number: barcodeNumber,
+      }, { ...(transaction ? { transaction } : {}) });
+
       // Subtract sale order recieved quantity from the stock entry
       await ProductStockEntry.update({
-        sale_order_recieved: stockEntry.sale_order_recieved - quantity,
-        quantity: stockEntry.quantity - quantity,
+        sale_order_recieved: stockEntry.sale_order_recieved - received_quantity,
+        quantity: stockEntry.quantity - received_quantity,
       }, { 
         where: { id: stockEntry.id },
         ...(transaction ? { transaction } : {})

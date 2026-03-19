@@ -5,27 +5,32 @@ const TrackProductStock = sequelize.define(
     'TrackProductStock',
     {
         product_id: {
-            type: DataTypes.INTEGER,
+            type: DataTypes.BIGINT,
             allowNull: false,
         },
         store_id: {
-            type: DataTypes.INTEGER,
-            allowNull: false,
+            type: DataTypes.BIGINT,
+            allowNull: true,
+        },
+        product_variant_id: {
+            type: DataTypes.BIGINT,
+            unsigned: true,
+            allowNull: true, 
         },
         item_name: {
             type: DataTypes.STRING,
             allowNull: true,
         },
         default_price: {
-            type: DataTypes.FLOAT,
+            type: DataTypes.DECIMAL,
             allowNull: true,
         },
         quantity_changed: {
-            type: DataTypes.INTEGER,
+            type: DataTypes.BIGINT,
             allowNull: false,
         },
         final_quantity: {
-            type: DataTypes.INTEGER,
+            type: DataTypes.BIGINT,
             allowNull: false,
         },
         comment: {
@@ -49,7 +54,7 @@ const TrackProductStock = sequelize.define(
             allowNull: true,
         },
         barcode_number:  {
-            type: DataTypes.STRING,
+            type: DataTypes.BIGINT,
             allowNull: true,
         },
         printed_v:  {
@@ -57,12 +62,12 @@ const TrackProductStock = sequelize.define(
             defaultValue: 0,
         },
         user_id: {
-            type: DataTypes.STRING,
+            type: DataTypes.BIGINT,
             allowNull: true,
         },
         company_id: {
-            type: DataTypes.STRING,
-            allowNull: true,
+            type: DataTypes.BIGINT,
+            allowNull: false,
         },
         is_dispatched: {
             type: DataTypes.INTEGER,
