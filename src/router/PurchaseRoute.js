@@ -79,7 +79,7 @@ router.get("/purchase-billed",authToken,GetAllPurchaseBilled);
 router.get("/all-rejected-purchase",authToken,GetAllPurchaseReject);
 router.get("/purchase/:id",authToken,getPurchase);
 router.get("/fetch-details", authToken, fetchPurchaseDetails);
-router.put("/update/:id",authToken,  UpdatePurchase);
+router.put("/update/:id",authToken, UpdatePurchase);
 
 router.delete('/:pid/item/:id', authToken, DeletePurchaseItem);
 router.delete('/:id', DeletePurchase);
