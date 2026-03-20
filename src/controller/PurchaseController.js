@@ -307,10 +307,10 @@ exports.UpdatePurchase = async (req, res) => {
 
 
     // Delete existing PurchaseProducts
-    await PurchaseProduct.destroy({
-      where: { purchase_id: id },
-      transaction,
-    });
+    // await PurchaseProduct.destroy({
+    //   where: { purchase_id: id },
+    //   transaction,
+    // });
 
     let totalPurchaseAmount = 0;
 
@@ -326,11 +326,11 @@ exports.UpdatePurchase = async (req, res) => {
 
       totalPurchaseAmount += totalWithTax;
 
-      await PurchaseProduct.create(
+      await PurchaseProduct.update(
         {
-          purchase_id: id,
+          // purchase_id: id,
           product_id: product.product_id,
-          product_variant_id: product.product_variant_id,
+          product_variant_id: product.product_variant_id || null,
           description: product.description,
           qty,
           unit_price: unitPrice,
@@ -340,9 +340,13 @@ exports.UpdatePurchase = async (req, res) => {
           taxIncl: totalWithTax,
           vendor_id: product.vendor_id,
           user_id: req.user.id,
-          company_id: req.user.company_id,
+          // company_id: req.user.company_id,
         },
-        { transaction, validate: true }
+        { 
+          where: { id: product.id },
+          transaction,
+          validate: true
+        }
       );
     });
 
@@ -507,6 +511,11 @@ exports.GetAllPurchaseRfqStatus = async (req, res) => {
         },
         {
           association: 'vendor',
+          attributes: ['id', 'vendor_name'],
+        },
+        {
+          association: 'warehouse',
+          attributes: ['id', 'name'],
         },
         {
           association: 'createdBy',
@@ -607,6 +616,7 @@ exports.GetAllPurchaseBilled = async (req, res) => {
     res.status(500).json({ error: "An error occurred while fetching the products" });
   }
 };
+
 exports.GetAllPurchaseRfqReview = async (req, res) => {
   try {
     const products = await Purchase.findAll({
@@ -888,70 +898,8 @@ exports.fetchPurchaseDetails = async (req, res) => {
             }
           ],
         },
-        // {
-        //   association: "products",
-        //   attributes: ["id", "product_id", "qty", "unit_price", "tax", "tax_amount", "taxExcl"],
-        //   include: [
-        //     {
-        //       association: "batches",
-        //       attributes: ["id", "batch_no", "manufacture_date", "expiry_date", "quantity", "receive_or_reject"],
-        //     },
-        //     {
-        //       association: "ProductsItem",
-        //       attributes: ["id", "product_code", "product_name", "sku_product", "buffer_size", "is_batch_applicable"],
-        //       include: [
-        //         { association: "masterProductType", attributes: ["name"] },
-        //         { association: "masterUOM", attributes: ["name", "label"] },
-        //         { association: "productCategory", attributes: ["title"] },
-        //         {
-        //           association: "productAttributeValues",
-        //           attributes: ["id", "product_attribute_id", "value"],
-        //           include: [
-        //             {
-        //               association: "productAttribute",
-        //               attributes: ["id", "name", "is_required"],
-        //             },
-        //           ],
-        //         },
-        //       ],
-        //     },
-        //   ],
-        // },
-        // { association: "vendor", attributes: ["id", "vendor_name", "phone"] },
-        // { association: "createdBy", attributes: ["name"] },
-        // { association: "warehouse", attributes: ["id", "name"] },
       ],
     });
-
-    // if (!purchaseData) {
-    //   return res.status(404).json({ status: false, message: "Purchase not found" });
-    // }
-
-    // const finalData = purchaseData.toJSON();
-
-    // // Ensure recv is always an array (Purchase hasMany Recv)
-    // const recvList = Array.isArray(finalData.recv) ? finalData.recv : finalData.recv ? [finalData.recv] : [];
-
-    // // Sum received quantity per product_id across all recv batches and their receivedProducts
-    // const receivedMap = {};
-    // for (const recv of recvList) {
-    //   const receivedProducts = recv.receivedProducts || [];
-    //   for (const rp of receivedProducts) {
-    //     const pid = rp.product_id;
-    //     receivedMap[pid] = (receivedMap[pid] || 0) + (Number(rp.qty) || 0);
-    //   }
-    // }
-
-    // // Add received (total received qty) and available_quantity (product.qty - total received) to each product
-    // finalData.products = (finalData.products || []).map((product) => {
-    //   const totalReceived = receivedMap[product.product_id] || 0;
-    //   const orderedQty = Number(product.qty) || 0;
-    //   return {
-    //     ...product,
-    //     received: totalReceived,
-    //     available_quantity: Math.max(0, orderedQty - totalReceived),
-    //   };
-    // });
 
     return res.status(200).json({
       status: true,
@@ -967,179 +915,6 @@ exports.fetchPurchaseDetails = async (req, res) => {
     });
   }
 };
-
-
-// exports.getPurchase = async (req, res) => {
-//   try {
-//     const purchaseWarehouse = await Purchase.findOne(
-//       {
-//         attributes: ['id', 'warehouse_id'],
-//         where: {
-//           id: req.params.id,
-//           company_id: req.user.company_id,
-//         },
-//       }
-//     );
-//     // Throw error if the purchase is not found
-//     if (!purchaseWarehouse) {
-//       return res.status(404).json({ error: "Purchase is not found" });
-//     }
-//     const warehouse_id = purchaseWarehouse.warehouse_id;
-//     const purchaseData = await Purchase.findOne({
-//       attributes: [
-//         'id', 
-//         'reference_number', 
-//         'total_amount', 
-//         'status',
-//         'vendor_id',
-//         'expected_arrival'
-//       ],
-//       where: {
-//         id: req.params.id,
-//         company_id: req.user.company_id,
-//       },
-//       include: [
-//         {
-//           association: "products",
-//           attributes: ['id', 'product_id'],
-//           include: [
-//             { 
-//               model: Product, 
-//               as: "ProductsItem",
-//               attributes: [
-//                 'id', 
-//                 'product_code',
-//                 'product_name', 
-//                 'sku_product', 
-//                 'product_code',
-//                 'buffer_size', 
-//                 'is_batch_applicable'
-//               ],
-//               include: [
-//                 {
-//                   association: 'productStockEntries',
-//                   attributes: ['id', 'quantity', 'inventory_at_transit'],
-//                   where: { warehouse_id: warehouse_id },
-//                   required: false,
-//                 },
-//                 {
-//                   association: 'masterProductType',
-//                   attributes: ['name'],
-//                 },
-//                 {
-//                   association: "masterUOM",
-//                   attributes: ['name', 'label'],
-//                 },
-//                 {
-//                   association: 'productCategory',
-//                   attributes: ['title'],
-//                 },
-//                 {
-//                   association: 'productAttributeValues',
-//                   attributes: ['id', 'product_attribute_id', 'value'],
-//                   include: [
-//                     {
-//                       association: 'productAttribute',
-//                       attributes: ['id', 'name', 'is_required']
-//                     }
-//                   ]
-//                 },
-//               ]
-//             }
-//           ],
-//         },
-//         { 
-//           model: Vendor, 
-//           as: "vendor",
-//           attributes: ['id', 'vendor_name', 'phone'],
-//         },
-//         { 
-//           model: AdvancePayment, 
-//           as: "advance" 
-//         },
-//         // { association: 'createdBy', attributes: ['name'] },
-//         { 
-//           association: 'warehouse', 
-//           attributes: ['id', 'name'] 
-//         },
-//       ],
-//     });
-
-//     if (!purchaseData) {
-//       return res.status(404).json({ error: "Purchase not found" });
-//     }
-
-//     // Step 1: Get sum of 'received' quantities per product from RecvProduct
-//     const receivedData = await ReceiveProductBatch.findAll({
-//       where: { 
-//         purchase_id: req.params.id, 
-//         warehouse_id: warehouse_id,
-//         receive_or_reject: 0 
-//       },
-//       attributes: [
-//         "product_id",
-//         [fn("SUM", col("quantity")), "total_received"],
-//       ],
-//       raw: true,
-//       group: ['product_id'],
-//     });
-
-//     // Step 2: Create a map of product_id -> total_received
-//     const receivedMap = {};
-//     receivedData.forEach((item) => {
-//       receivedMap[item.product_id] = parseInt(item.total_received) || 0;
-//     });
-
-//     // Step 3: Add 'received' to each product
-//     const productsWithReceived = purchaseData.products.map((product) => {
-//       const productJson = product.toJSON();
-//       productJson.received = receivedMap[product.product_id] || 0;
-//       return productJson;
-//     });
-
-//     // Step 4: Return updated JSON with received included in products
-//     const finalData = purchaseData.toJSON();
-//     finalData.products = productsWithReceived;
-
-//     return res.status(200).json(finalData);
-//   } catch (error) {
-//     console.error("Error fetching purchase:", error);
-//     return res.status(500).json({ error: "An error occurred while fetching the purchase" });
-//   }
-// };
-
-// exports.getPurchase = async (req, res) => {
-//   //return res.send('yesy');
-//   //   try {
-//   const purchaseData = await Purchase.findOne({
-//     where: {
-//       id: req.params.id,
-//       company_id: req.user.company_id,
-
-//     },
-//     include: [
-//       {
-//         model: PurchaseProduct,
-//         as: "products",
-//         include: [{ model: Product, as: "ProductsItem" }],
-//       },
-//       { model: Vendor, as: "vendor" },
-//       { model: AdvancePayment, as: "advance" },
-//     ],
-//   });
-
-//   if (!purchaseData) {
-//     return res.status(404).json({ error: "Purchase not found" });
-//   }
-
-//   res.status(200).json(purchaseData);
-//   //   } catch (error) {
-//   //     console.error("Error fetching purchase:", error);
-//   //     res
-//   //       .status(500)
-//   //       .json({ error: "An error occurred while fetching the purchase" });
-//   //   }
-// };
 
 exports.getPurchaseaddi = async (req, res) => {
   const { id, venid } = req.params;
@@ -1403,7 +1178,12 @@ exports.StatusUpdate = async (req, res) => {
     const purchase = await Purchase.findOne({ 
       attributes: ['id', 'status', 'warehouse_id'],
       where: { id: purchaseId },
-      raw: true,
+      include: [
+        {
+          association: 'products',
+          attributes: ['id', 'product_id', 'product_variant_id', 'qty'],
+        }
+      ]
     });
 
     if (!purchase) {
@@ -1450,7 +1230,7 @@ exports.StatusUpdate = async (req, res) => {
 
     // If the status is 5, add to inventory at transaction
     if (sid == 5) {
-      await addToInventoryAtTransaction(purchaseId, purchase.warehouse_id, transaction);
+      await addToInventoryAtTransaction(purchase.products, purchase.warehouse_id, transaction);
     }
 
     //sendMail('sumit.econstra@gmail.com', 'New Purchase Request for Approval', 'New Purchase Request for Approval');
@@ -1718,7 +1498,63 @@ exports.GetAllPurchaseOrderFolloup = async (req, res) => {
 //for recv listing
 exports.GetAllPurchaseOrderRecv = async (req, res) => {
   try {
-    const products = await Purchase.findAll({
+    const { 
+      page = 1, 
+      limit = 10, 
+      status = null, 
+      reference_number = null, 
+      expected_arrival_start = null, 
+      expected_arrival_end = null 
+    } = req.query;
+    // validate page and limit
+    if (page < 1) {
+      return res.status(400).json({ error: "Page number must be greater than 0" });
+    }
+    if (limit < 1) {
+      return res.status(400).json({ error: "Limit must be greater than 0" });
+    }
+
+    // validate expected arrival start and end
+    if (expected_arrival_start && expected_arrival_end) {
+      if (expected_arrival_start > expected_arrival_end) {
+        return res.status(400).json({ error: "Expected arrival start date must be before expected arrival end date" });
+      }
+    }
+
+    // Set offset to calculate the number of records to skip
+    const offset = (page - 1) * limit;
+
+    // where condition
+    const whereCondition = {
+      company_id: req.user.company_id,
+      status: {
+        [Op.in]: [2, 3, 4, 5],
+      }
+    };
+
+    // add status condition
+    if (status) {
+      whereCondition.status = {
+        [Op.eq]: parseInt(status, 10),
+      };
+    }
+
+    // add reference number condition
+    if (reference_number) {
+      whereCondition.reference_number = {
+        [Op.eq]: reference_number,
+      };
+    }
+
+    // add expected arrival start and end condition
+    if (expected_arrival_start && expected_arrival_end) {
+      whereCondition.expected_arrival = {
+        [Op.between]: [expected_arrival_start, expected_arrival_end],
+      };
+    }
+
+    // Get all purchase records with pagination
+    const purchaseRecords = await Purchase.findAndCountAll({
       attributes: [
         'id', 
         'reference_number', 
@@ -1726,7 +1562,8 @@ exports.GetAllPurchaseOrderRecv = async (req, res) => {
         'total_amount', 
         'is_parent', 
         'status',
-        'created_at'
+        'created_at',
+        'management_approved_at',
       ],
       where: {
         company_id: req.user.company_id,
@@ -1749,6 +1586,10 @@ exports.GetAllPurchaseOrderRecv = async (req, res) => {
           }
         ]
       },
+      distinct: true,
+      order: [["created_at", "DESC"]],
+      limit: parseInt(limit, 10),
+      offset,
       include: [
         // {
         //   model: PurchaseProduct,
@@ -1758,40 +1599,117 @@ exports.GetAllPurchaseOrderRecv = async (req, res) => {
           association: "vendor",
           attributes: ['id', 'vendor_name'],
         },
-        // {
-        //   model: AdvancePayment,
-        //   as: "advance",
-        // },
-        // {
-        //   model: Followup,
-        //   as: "followup",
-        // },
+        {
+          association: 'warehouse',
+          attributes: ['id', 'name'],
+        },
+        {
+          association: 'managementApprovedBy',
+          attributes: ['id', 'name'],
+        }
       ],
       order: [["updated_at", "DESC"]],
     });
 
-    res.status(200).json(products);
+    // Get paginated data
+    const paginatedPurchaseData = CommonHelper.paginate(purchaseRecords, page, limit);
+
+    // return response with pagination data
+    res.status(200).json({
+      status: true,
+      message: "Purchase records fetched successfully",
+      data: paginatedPurchaseData,
+    });
   } catch (error) {
     console.error("Error fetching products:", error);
     res
       .status(500)
-      .json({ error: "An error occurred while fetching the products" });
+      .json({ 
+        status: false, 
+        message: "An error occurred while fetching the products", 
+        error: error.message 
+      });
   }
 };
+
+/*
+ * Get all pending purchase records with pagination
+ * @param {page} req 
+ * @param {object} res - The response object
+ * @param {number} req.query.page - The page number
+ * @param {number} req.query.limit - The number of records per page
+ * @param {number} req.query.status - The status of the purchase
+ * @param {string} req.query.reference_number - The reference number of the purchase
+ * @param {string} req.query.expected_arrival_start - The start date of the expected arrival
+ * @param {string} req.query.expected_arrival_end - The end date of the expected arrival
+ * @returns 
+ */
 exports.pendingApproval = async (req, res) => {
   try {
-    const products = await Purchase.findAll({
-      attributes: ['id', 'reference_number', 'expected_arrival', 'total_amount', 'is_parent', 'status'],
-      where: {
-        company_id: req.user.company_id,
-        user_id: req.user.id,
-        status: 3,
-        is_parent: 1,
-      },
+    const { 
+      page = 1, 
+      limit = 10, 
+      status = null, 
+      reference_number = null, 
+      expected_arrival_start = null, 
+      expected_arrival_end = null 
+    } = req.query;
+    // validate page and limit
+    if (page < 1) {
+      return res.status(400).json({ error: "Page number must be greater than 0" });
+    }
+    if (limit < 1) {
+      return res.status(400).json({ error: "Limit must be greater than 0" });
+    }
+
+    // validate expected arrival start and end
+    if (expected_arrival_start && expected_arrival_end) {
+      if (expected_arrival_start > expected_arrival_end) {
+        return res.status(400).json({ error: "Expected arrival start date must be before expected arrival end date" });
+      }
+    }
+
+    // Set offset to calculate the number of records to skip
+    const offset = (page - 1) * limit;
+
+    // where condition
+    const whereCondition = {
+      company_id: req.user.company_id,
+      status: 3,
+      is_parent: 1
+    }
+
+    // add status condition
+    if (status) {
+      whereCondition.status = {
+        [Op.eq]: parseInt(status, 10),
+      };
+    }
+
+    // add reference number condition
+    if (reference_number) {
+      whereCondition.reference_number = {
+        [Op.eq]: reference_number,
+      };
+    }
+
+    // add expected arrival start and end condition
+    if (expected_arrival_start && expected_arrival_end) {
+      whereCondition.expected_arrival = {
+        [Op.between]: [expected_arrival_start, expected_arrival_end],
+      };
+    }
+    // Get all purchase records with pagination
+    const purchaseRecords = await Purchase.findAndCountAll({
+      attributes: ['id', 'reference_number', 'expected_arrival', 'total_amount', 'is_parent', 'status', 'created_at', 'updated_at'],
+      where: whereCondition,
+      distinct: true,
+      order: [["created_at", "DESC"]],
+      limit: parseInt(limit, 10),
+      offset,
       include: [
         {
-          model: PurchaseProduct,
-          as: "products",
+          association: "products",
           where: { status: { [Op.ne]: 0 } },
         },
         {
@@ -1801,17 +1719,31 @@ exports.pendingApproval = async (req, res) => {
         {
           association: 'createdBy',
           attributes: ['name'],
+        },
+        {
+          association: 'warehouse',
+          attributes: ['id', 'name'],
         }
       ],
       order: [["created_at", "DESC"]],
     });
 
-    res.status(200).json(products);
+    // Get paginated data
+    const paginatedPurchaseData = CommonHelper.paginate(purchaseRecords, page, limit);
+
+    // return response with pagination data
+    res.status(200).json({
+      status: true,
+      message: "Purchase records fetched successfully",
+      data: paginatedPurchaseData,
+    });
   } catch (error) {
     console.error("Error fetching products:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching the products" });
+    return res.status(500).json({ 
+      status: false, 
+      message: "An error occurred while fetching the purchase records", 
+      error: error.message 
+    });
   }
 };
 //final approval
@@ -3550,9 +3482,12 @@ exports.ApprovedByManagement = async (req, res) => {
   let transaction = null;
   
   try {
+    // Get the purchase ID
     const { id } = req.params;
+    // Get the request body
     const { products, remarks, send_to_vendor } = req.body;
 
+    // Get the purchase record
     const purchase = await Purchase.findOne({
       attributes: ['id', 'status', 'warehouse_id'],
       where: { id },
@@ -3589,7 +3524,7 @@ exports.ApprovedByManagement = async (req, res) => {
         promises.push(PurchaseProduct.update(
           {
             product_id: product.product_id,
-            product_variant_id: product.variant_id,
+            product_variant_id: product.variant_id || null,
             qty: product.qty,
             unit_price: product.unit_price,
             tax: product.tax,
@@ -3605,6 +3540,8 @@ exports.ApprovedByManagement = async (req, res) => {
     promises.push(Purchase.update({
       total_amount: totalAmount,
       untaxed_amount: untaxedAmount,
+      management_approved_by: req.user.id,
+      management_approved_at: new Date(),
       status: send_to_vendor ? 5 : 4 // Update the purchase status to approved by management
     }, { where: { id }, transaction }));
 
@@ -3619,7 +3556,7 @@ exports.ApprovedByManagement = async (req, res) => {
 
     // If send_to_vendor is true, add to inventory at transaction
     if (send_to_vendor) {
-      promises.push(addToInventoryAtTransaction(id, purchase.warehouse_id, transaction));
+      promises.push(addToInventoryAtTransaction(products, purchase.warehouse_id, transaction));
     }
 
     // Execute the promises
@@ -3644,25 +3581,32 @@ exports.ApprovedByManagement = async (req, res) => {
  * @param {object} transaction - The transaction object
  * @returns {Promise<void>}
  */
-const addToInventoryAtTransaction = async (puchase_id, warehouse_id, transaction = false) => {
+const addToInventoryAtTransaction = async (purchasedProducts, warehouse_id, transaction = false) => {
   return new Promise(async (resolve, reject) => {
     try {
       // Get the purchase products
-      const purchaseProducts = await PurchaseProduct.findAll({
-        attributes: ['id', 'product_id', 'qty'],
-        where: { purchase_id: puchase_id },
-        raw: true,
-      });
-      // Throw error if the purchase products are not found
-      if (purchaseProducts.length === 0) {
-        return reject(new Error("Purchase products are not found"));
-      }
+      // const purchaseProducts = await PurchaseProduct.findAll({
+      //   attributes: ['id', 'product_id', 'qty'],
+      //   where: { purchase_id: puchase_id },
+      //   raw: true,
+      // });
+      // // Throw error if the purchase products are not found
+      // if (purchaseProducts.length === 0) {
+      //   return reject(new Error("Purchase products are not found"));
+      // }
       // Add to inventory at transaction
-      const inventoryPromises = purchaseProducts.map(async (purchaseProduct) => {
+      const inventoryPromises = purchasedProducts.map(async (purchasedProduct) => {
+        const variant_id = purchasedProduct.product_variant_id ? 
+                  purchasedProduct.product_variant_id : purchasedProduct.variant_id ? 
+                  purchasedProduct.variant_id : null;
         // Get product stock entry
         const productStockEntry = await ProductStockEntry.findOne({
           attributes: ['id', 'quantity', 'inventory_at_transit'],
-          where: { product_id: purchaseProduct.product_id, warehouse_id: warehouse_id },
+          where: { 
+            product_id: purchasedProduct.product_id,
+            warehouse_id: warehouse_id,
+            ...(variant_id ? { product_variant_id: variant_id } : {})
+          },
           raw: true,
         });
         // exclude the operation if the product stock entry is not found
@@ -3672,7 +3616,7 @@ const addToInventoryAtTransaction = async (puchase_id, warehouse_id, transaction
         }
         // Update the product stock entry
         await ProductStockEntry.update({
-          inventory_at_transit: productStockEntry.inventory_at_transit + purchaseProduct.qty
+          inventory_at_transit: productStockEntry.inventory_at_transit + purchasedProduct.qty
         }, { 
           where: { id: productStockEntry.id }, 
           ...(transaction ? { transaction } : {}) 
