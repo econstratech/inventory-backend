@@ -657,49 +657,114 @@ exports.GetAllPurchaseRfqReview = async (req, res) => {
 //show all reject
 exports.GetAllPurchaseReject = async (req, res) => {
   try {
-    const products = await Purchase.findAll({
-      attributes: ['id', 'reference_number', 'total_amount', 'status', 'created_at'],
-      where: {
-        company_id: req.user.company_id,
-        status: {
-          [Op.and]: [
-            { [Op.ne]: 0 },
-            {
-              [Op.or]: [
-                { [Op.eq]: 8 },
-              ]
-            }
-          ]
-        }
-      },
-      raw: true,
-      nest: true,
+    const { 
+      page = 1, 
+      limit = 10, 
+      status = null, 
+      reference_number = null, 
+      expected_arrival_start = null, 
+      expected_arrival_end = null 
+    } = req.query;
+    // validate page and limit
+    if (page < 1) {
+      return res.status(400).json({ error: "Page number must be greater than 0" });
+    }
+    if (limit < 1) {
+      return res.status(400).json({ error: "Limit must be greater than 0" });
+    }
+
+    // validate expected arrival start and end
+    if (expected_arrival_start && expected_arrival_end) {
+      if (expected_arrival_start > expected_arrival_end) {
+        return res.status(400).json({ error: "Expected arrival start date must be before expected arrival end date" });
+      }
+    }
+
+    // Set offset to calculate the number of records to skip
+    const offset = (page - 1) * limit;
+
+    // where condition
+    const whereCondition = {
+      company_id: req.user.company_id,
+      status: {
+        [Op.in]: [8],
+      }
+    };
+
+    // add status condition
+    if (status) {
+      whereCondition.status = {
+        [Op.eq]: parseInt(status, 10),
+      };
+    }
+
+    // add reference number condition
+    if (reference_number) {
+      whereCondition.reference_number = {
+        [Op.like]: `%${reference_number}%`,
+      };
+    }
+
+    // add expected arrival start and end condition
+    if (expected_arrival_start && expected_arrival_end) {
+      whereCondition.expected_arrival = {
+        [Op.between]: [expected_arrival_start, expected_arrival_end],
+      };
+    }
+
+    // Get all purchase records with pagination
+    const purchaseRecords = await Purchase.findAndCountAll({
+      attributes: [
+        'id',
+        'reference_number',
+        'vendor_id',
+        'vendor_reference',
+        'expected_arrival',
+        'total_amount',
+        'is_parent',
+        'warehouse_id',
+        'status',
+        'created_at',
+        'updated_at',
+      ],
+      where: whereCondition,
+      distinct: true,
+      order: [["created_at", "DESC"]],
+      limit: parseInt(limit, 10),
+      offset,
       include: [
         {
           association: 'products',
-          attributes: ['id', 'product_id', 'qty', 'unit_price', 'tax', 'total_amount'],
         },
         {
-          model: Vendor,
-          as: "vendor",
-          attributes: ['id', 'vendor_name', 'phone'],
-        },
-        {
-          association: 'createdBy',
-          attributes: ['name'],
+          association: 'vendor',
+          attributes: ['id', 'vendor_name'],
         },
         {
           association: 'warehouse',
           attributes: ['id', 'name'],
         },
+        {
+          association: 'createdBy',
+          attributes: ['id', 'name'],
+        },
       ],
-      order: [["updated_at", "DESC"]],
     });
 
-    res.status(200).json(products);
+    // Get paginated data
+    const paginatedPurchaseData = CommonHelper.paginate(purchaseRecords, page, limit);
+
+    res.status(200).json({
+      status: true,
+      message: "List of all rejected purchase records fetched successfully",
+      data: paginatedPurchaseData,
+    });
   } catch (error) {
     console.error("Error fetching products:", error);
-    res.status(500).json({ error: "An error occurred while fetching the products" });
+    res.status(500).json({
+      status: false,
+      message: error.message || "An error occurred while fetching the rejected purchase records",
+    });
   }
 };
 
@@ -1565,27 +1630,7 @@ exports.GetAllPurchaseOrderRecv = async (req, res) => {
         'created_at',
         'management_approved_at',
       ],
-      where: {
-        company_id: req.user.company_id,
-        user_id: req.user.id,
-        [Op.and]: [
-          {
-            status: {
-              [Op.gte]: 5
-            }
-          },
-          {
-            status: {
-              [Op.notIn]: [8, 10]
-            }
-          },
-          {
-            status: {
-              [Op.ne]: 7
-            }
-          }
-        ]
-      },
+      where: whereCondition,
       distinct: true,
       order: [["created_at", "DESC"]],
       limit: parseInt(limit, 10),
@@ -1829,6 +1874,8 @@ exports.getManagmentReview = async (req, res) => {
       attributes: ['id', 'remarks', 'created_at'],
       where: { purchase_id: req.params.id },
       order: [["created_at", "DESC"]],
+      raw: true,
+      nest: true,
       include: [
         {
           association: 'user',
@@ -1839,7 +1886,8 @@ exports.getManagmentReview = async (req, res) => {
 
     // Return the success response
     res.status(200).json({
-      success: true,
+      status: true,
+      message: "Purchase remarks fetched successfully",
       data: remarks,
     });
   } catch (err) {
@@ -2557,6 +2605,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
     const { products, warehouse_id, bill_number, received_status } = req.body;
     const purchaseId = req.params.purchase_id;
 
+    // Get the purchase data
     const purchaseData = await Purchase.findOne({
       attributes: ['id'],
       where: { id: purchaseId, status: { [Op.in]: [4, 5] } },
@@ -2630,6 +2679,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
         ) {
           isanyUpdate = true;
 
+          // Get the product data
           const productData = await Product.findOne({
             attributes: ['id', 'product_name', 'unit', 'is_batch_applicable'],
             where: { id: product.product_id },
@@ -2639,7 +2689,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
                 attributes: ['id', 'quantity', 'inventory_at_transit'],
                 where: { 
                   warehouse_id: warehouse_id, 
-                  product_variant_id: product?.productVariant?.id 
+                  ...(product?.productVariant?.id ? { product_variant_id: product?.productVariant?.id } : {})
                 },
                 required: false,
               },
@@ -2686,7 +2736,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
             } else {
               await ProductStockEntry.create({
                 product_id: product.product_id,
-                product_variant_id: product?.productVariant?.id,
+                product_variant_id: product?.productVariant?.id || null,
                 warehouse_id: warehouse_id,
                 company_id: req.user.company_id,
                 user_id: req.user.id,
@@ -2702,6 +2752,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
               where: {
                 product_id: product.product_id,
                 company_id: req.user.company_id,
+                ...(product?.productVariant?.id ? { product_variant_id: product?.productVariant?.id } : {}),
                 status_in_out: 1,
               },
               transaction
@@ -2711,6 +2762,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
                 product_id: product.product_id,
                 company_id: req.user.company_id,
                 status_in_out: 0,
+                ...(product?.productVariant?.id ? { product_variant_id: product?.productVariant?.id } : {}),
               },
               transaction
             })
@@ -2721,9 +2773,11 @@ exports.AddOrUpdateRecv = async (req, res) => {
           const referenceNumber = "INV" + Math.floor(1000000 + Math.random() * 9000000);
           const barcodeNumber = Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString();
 
+          // create track product stock entry
           await TrackProductStock.create(
             {
               product_id: product.product_id,
+              ...(product?.productVariant?.id ? { product_variant_id: product?.productVariant?.id } : {}),
               store_id: warehouse_id,
               item_name: product.ProductsItem?.product_name || "",
               default_price: taxExcl || 0,
@@ -2751,7 +2805,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
                 raw: true,
                 where: {
                   product_id: product.product_id,
-                  product_variant_id: batch.variant_id,
+                  ...(batch.variant_id ? { product_variant_id: batch.variant_id } : {}),
                   warehouse_id: warehouse_id,
                 },
               });
@@ -2765,7 +2819,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
               } else {
                 await ProductStockEntry.create({
                   product_id: product.product_id,
-                  product_variant_id: batch.variant_id,
+                  product_variant_id: batch.variant_id || null,
                   warehouse_id: warehouse_id,
                   company_id: req.user.company_id,
                   user_id: req.user.id,
@@ -2780,7 +2834,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
                   purchase_product_id: product.id,
                   purchase_id: purchaseId,
                   product_id: product.product_id,
-                  product_variant_id: batch.variant_id,
+                  product_variant_id: batch.variant_id || null,
                   warehouse_id: warehouse_id,
                   bill_id: purchaseRecieve.id,
                   company_id: req.user.company_id,
