@@ -1233,3 +1233,83 @@
  *                 details:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/purchase/getremarks/{id}:
+ *   get:
+ *     summary: Get all remarks for a purchase order
+ *     description: Returns all management remarks for the given purchase order, newest first (`created_at` descending). Each item includes the author user (`id`, `name`, `email`).
+ *     tags: [Purchase]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Purchase order ID
+ *         example: 42
+ *     responses:
+ *       200:
+ *         description: Purchase remarks fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Purchase remarks fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   description: Remarks ordered by created_at descending
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: Remarks row ID
+ *                         example: 101
+ *                       remarks:
+ *                         type: string
+ *                         description: HTML or text content of the remark
+ *                         example: "<p>Approved by management.</p>"
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                         description: When the remark was created
+ *                         example: "2026-03-12T10:25:00.000Z"
+ *                       user:
+ *                         type: object
+ *                         nullable: true
+ *                         description: User who created the remark
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 5
+ *                           name:
+ *                             type: string
+ *                             example: "Sudipta"
+ *                           email:
+ *                             type: string
+ *                             format: email
+ *                             example: "sudipta@example.com"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   description: Error message
+ */

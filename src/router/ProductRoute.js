@@ -23,12 +23,9 @@ const {
     getStorewiseMonthlyStockReport, 
     getProductStockMaintenanceReport, 
     getSlowMovingItemReport, 
-    getDeadStockReport, 
-    getInventoryPerformance, 
+    getDeadStockReport,
     getStockLevels, 
     getStockValuation, 
-    getTopItems, 
-    getInventoryOverview, 
     generateProductReport, 
     // GetLowQtyProducts, 
     // GetOverStockProducts, 
@@ -85,11 +82,10 @@ router.get("/storewise-monthly-stock", authToken, getStorewiseMonthlyStockReport
 router.get("/product-stock-maintenance", authToken,getProductStockMaintenanceReport);
 router.get('/slow-moving-items',authToken, getSlowMovingItemReport);
 router.get("/dead-stock-report", authToken, getDeadStockReport);
-router.get("/inventory/performance", authToken, getInventoryPerformance);
+
 router.get("/inventory/stock-levels", authToken, getStockLevels);
 router.get("/inventory/stock-valuation", authToken, getStockValuation);
-router.get('/inventory/top-items', authToken,getTopItems);
-router.get("/inventory/overview",authToken,getInventoryOverview);
+
 
 router.post("/generate-report", authToken, generateProductReport);
 

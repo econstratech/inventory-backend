@@ -45,7 +45,7 @@ const ReceiveProductBatch = sequelize.define(
         },
         product_variant_id: {
             type: DataTypes.BIGINT,
-            allowNull: false,
+            allowNull: true,
             references: {
                 model: ProductVariant,
                 key: 'id'

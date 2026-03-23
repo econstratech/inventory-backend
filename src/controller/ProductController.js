@@ -2061,154 +2061,6 @@ exports.getStockLevels = async (req, res) => {
   }
 };
 
-// Inventory Performance
-exports.getInventoryPerformance = async (req, res) => {
-  const company_id = req.user.company_id;
-  try {
-    const result = await TrackProductStock.findAll({
-      where: { company_id },
-      attributes: [
-        [literal('YEARWEEK(created_at, 1)'), 'week'],
-        'status_in_out',
-        [fn('SUM', col('quantity_changed')), 'total']
-      ],
-      group: ['week', 'status_in_out'],
-      order: [literal('week ASC')],
-    });
-
-    const grouped = {};
-    result.forEach(entry => {
-      const week = entry.getDataValue('week');
-      const status = entry.getDataValue('status_in_out');
-      const total = parseFloat(entry.getDataValue('total') || 0);
-
-      if (!grouped[week]) {
-        grouped[week] = { Inward: 0, Outward: 0 };
-      }
-
-      if (status === 1) grouped[week].Inward += total;
-      else if (status === 0) grouped[week].Outward += total;
-    });
-
-    const sortedWeeks = Object.keys(grouped).sort();
-    const labels = sortedWeeks.map(weekStr => {
-      const year = weekStr.slice(0, 4);
-      const week = weekStr.slice(4);
-      return `Week ${week} - ${year}`;
-    });
-
-    const inwardData = sortedWeeks.map(week => grouped[week].Inward);
-    const outwardData = sortedWeeks.map(week => grouped[week].Outward);
-
-    res.json({
-      labels,
-      datasets: {
-        Inward: inwardData,
-        Outward: outwardData,
-      },
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to fetch inventory performance.' });
-  }
-};
-
-// Top Items
-exports.getTopItems = async (req, res) => {
-  const company_id = req.user.company_id;
-  try {
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-
-    // Top Selling Items
-    const topSelling = await TrackProductStock.findAll({
-      where: {
-        company_id,
-        status_in_out: 0,
-        created_at: { [Op.gte]: threeMonthsAgo },
-      },
-      attributes: [
-        'item_name',
-        [fn('COUNT', fn('DISTINCT', col('reference_number'))), 'invoice_count'],
-        [fn('SUM', literal('quantity_changed * default_price')), 'traded_amount'],
-      ],
-      group: ['item_name'],
-      order: [[literal('traded_amount'), 'DESC']],
-      limit: 5,
-    });
-
-    // Top Purchased Items
-    const topPurchased = await TrackProductStock.findAll({
-      where: {
-        company_id,
-        status_in_out: 1,
-        created_at: { [Op.gte]: threeMonthsAgo },
-      },
-      attributes: [
-        'item_name',
-        [fn('COUNT', fn('DISTINCT', col('reference_number'))), 'invoice_count'],
-        [fn('SUM', literal('quantity_changed * default_price')), 'traded_amount'],
-      ],
-      group: ['item_name'],
-      order: [[literal('traded_amount'), 'DESC']],
-      limit: 5,
-    });
-
-    res.json({
-      topSelling: topSelling.map(item => ({
-        item_name: item.item_name,
-        invoice_count: parseInt(item.getDataValue('invoice_count')),
-        traded_amount: parseFloat(item.getDataValue('traded_amount') || 0),
-      })),
-      topPurchased: topPurchased.map(item => ({
-        item_name: item.item_name,
-        invoice_count: parseInt(item.getDataValue('invoice_count')),
-        traded_amount: parseFloat(item.getDataValue('traded_amount') || 0),
-      })),
-    });
-  } catch (error) {
-    console.error('Error in getTopItems:', error);
-    res.status(500).json({ error: 'Failed to fetch top items.' });
-  }
-};
-
-// Inventory Overview
-exports.getInventoryOverview = async (req, res) => {
-  const company_id = req.user.company_id;
-  try {
-    const result = await TrackProductStock.findAll({
-      where: { company_id },
-      attributes: [
-        'product_id',
-        [fn('SUM', literal(`CASE WHEN status_in_out = 1 THEN quantity_changed ELSE -quantity_changed END`)), 'net_quantity'],
-        'default_price'
-      ],
-      group: ['product_id', 'default_price']
-    });
-
-    let totalValuation = 0;
-    const uniqueItems = new Set();
-
-    result.forEach(row => {
-      const qty = parseFloat(row.getDataValue('net_quantity') || 0);
-      const price = parseFloat(row.default_price || 0);
-      const value = qty * price;
-
-      totalValuation += value;
-      uniqueItems.add(row.product_id);
-    });
-
-    res.json({
-      totalItems: uniqueItems.size,
-      totalValuation: parseFloat(totalValuation.toFixed(2))
-    });
-  } catch (error) {
-    console.error('Error in getInventoryOverview:', error);
-    res.status(500).json({ error: 'Failed to fetch inventory overview.' });
-  }
-};
-
-
 
 // api for low qty alert -------------------------------------------------------------------
 
@@ -2586,6 +2438,7 @@ exports.AddToStock = async (req, res) => {
     const seen = new Set();
     const duplicates = [];
     const validationErrors = [];
+    const isVariantBased = req.user.is_variant_based;
 
     for (let i = 0; i < stockEntries.length; i++) {
       const entry = stockEntries[i];
@@ -2595,7 +2448,7 @@ exports.AddToStock = async (req, res) => {
       if (!entry.product_id) {
         validationErrors.push(`Entry ${index}: product_id is required`);
       }
-      if (!entry.product_variant_id) {
+      if (!entry.product_variant_id && isVariantBased) {
         validationErrors.push(`Entry ${index}: product_variant_id is required`);
       }
       if (!entry.warehouse_id) {
@@ -2611,7 +2464,7 @@ exports.AddToStock = async (req, res) => {
         if (seen.has(key)) {
           duplicates.push({
             product_id: entry.product_id,
-            product_variant_id: entry.product_variant_id,
+            ...(isVariantBased ? { product_variant_id: entry.product_variant_id } : {}),
             warehouse_id: entry.warehouse_id,
             entry_index: index
           });
@@ -2643,7 +2496,7 @@ exports.AddToStock = async (req, res) => {
     const productWarehousePairs = stockEntries.map(e => ({
       product_id: e.product_id,
       warehouse_id: e.warehouse_id,
-      product_variant_id: e.product_variant_id
+      ...(isVariantBased ? { product_variant_id: e.product_variant_id } : {}),
     }));
 
 
@@ -2671,7 +2524,7 @@ exports.AddToStock = async (req, res) => {
     const entriesToCreate = stockEntries.map(entry => ({
       company_id: req.user.company_id,
       product_id: entry.product_id,
-      product_variant_id: entry.product_variant_id,
+      ...(isVariantBased ? { product_variant_id: entry.product_variant_id } : {}),
       warehouse_id: entry.warehouse_id,
       buffer_size: entry.buffer_size,
       user_id: req.user.id,

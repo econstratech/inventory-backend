@@ -20,6 +20,7 @@ function registerRoutes(app, appPrefix) {
   const master = require("./MasterRoute");
   const bom = require("./BOM");
   const report = require("./ReportRoute");
+  const inventory = require("./InventoryRoute");
 
   app.use(`${appPrefix}/user`, user);
   app.use(`${appPrefix}/product`, product);
@@ -28,6 +29,7 @@ function registerRoutes(app, appPrefix) {
   app.use(`${appPrefix}/purchase`, purchase);
   app.use(`${appPrefix}/customer`, customer);
   app.use(`${appPrefix}/sales`, sales);
+  app.use(`${appPrefix}/inventory`, inventory);
   app.use(appPrefix, settings);
   app.use(`${appPrefix}/module`, moduledata);
   app.use(`${appPrefix}/roles`, roledata);
