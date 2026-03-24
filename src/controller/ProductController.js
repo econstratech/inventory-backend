@@ -170,6 +170,7 @@ exports.uploadProducts = async (req, res) => {
     }
 
     const companyId = req.user.company_id;
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
     const buffer = req.file.buffer;
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
 
@@ -222,6 +223,7 @@ exports.uploadProducts = async (req, res) => {
         const itemType = row[UPLOAD_FIXED_HEADERS.ITEM_TYPE] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_TYPE]).trim() : '';
         const categoryName = row[UPLOAD_FIXED_HEADERS.CATEGORY] != null ? String(row[UPLOAD_FIXED_HEADERS.CATEGORY]).trim() : '';
         const uomName = row[UPLOAD_FIXED_HEADERS.UOM] != null ? String(row[UPLOAD_FIXED_HEADERS.UOM]).trim() : '';
+
         const weightPerUnit = row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT] != null ? parseInt(row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT]) : 0;
         const batchApplicable = parseBatchApplicable(row[UPLOAD_FIXED_HEADERS.BATCH_APPLICABLE]);
         const markupPercent = row[UPLOAD_FIXED_HEADERS.MARKUP_PERCENT] != null && row[UPLOAD_FIXED_HEADERS.MARKUP_PERCENT] !== ''
@@ -263,6 +265,7 @@ exports.uploadProducts = async (req, res) => {
 
         const productSKU = await generateUniqueProductSKU(companyId);
 
+        // Create product
         const productData = await Product.create({
           company_id: companyId,
           user_id: req.user.id,
@@ -270,6 +273,7 @@ exports.uploadProducts = async (req, res) => {
           product_name: itemName,
           product_type_id: productTypeId,
           product_category_id: productCategoryId,
+          ...(!isVariantBased ? { uom_id: uomId } : {}),
           // uom_id: uomId,
           // buffer_size: null,
           is_batch_applicable: batchApplicable,
@@ -291,10 +295,14 @@ exports.uploadProducts = async (req, res) => {
             value: val,
           });
         }
+        // Add product attribute values
         if (productAttributeValues.length > 0) {
           await ProductAttributeValue.bulkCreate(productAttributeValues, { transaction });
         }
-        await productVatientInsert(productData, uomId, weightPerUnit, req.user, transaction);
+        // If company is set to variant based then add product variants
+        if (isVariantBased) {
+          await productVatientInsert(productData, uomId, weightPerUnit, req.user, transaction);
+        }
 
         products.push(productData);
       }
@@ -383,15 +391,20 @@ exports.AddProduct = async (req, res) => {
       brand_id,
       dynamic_attributes,
       product_variants,
+      uom_id,
       is_batch_applicable,
       product_category_id,
       markup_percentage
     } = req.body;
 
+    // Set company ID
     const companyId = req.user.company_id;
+    // Check if company is set to variant based
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
     // Generate product SKU
     const productSKU = await generateUniqueProductSKU(companyId);
 
+    // Check if product with same code exist, if exist then return error
     const isProductExist = await Product.findOne({
       attributes: ['id'],
       where: { product_code, company_id: companyId },
@@ -406,11 +419,14 @@ exports.AddProduct = async (req, res) => {
       });
     }
 
-    dynamic_attributes.forEach((eachAttributerow) => {
-      if (eachAttributerow.is_required === 1 && eachAttributerow.value.trim() === '') {
-        throw Error("Please fill all required fields");
-      }
-    });
+    // Check if all required fields of dynamic attributes are filled
+    if (dynamic_attributes.length > 0) {
+      dynamic_attributes.forEach((eachAttributerow) => {
+        if (eachAttributerow.is_required === 1 && eachAttributerow.value.trim() === '') {
+          throw Error("Please fill all required fields");
+        }
+      });
+    }
 
     // Begin transaction
     transaction = await sequelize.transaction();
@@ -423,14 +439,12 @@ exports.AddProduct = async (req, res) => {
       product_name,
       product_type_id,
       product_category_id,
+      uom_id: isVariantBased ? null : uom_id,
       brand_id,
       sku_product: productSKU,
       is_batch_applicable,
       markup_percentage,
     }, { transaction });
-
-    // Check if company is set to variant based
-    const isVariantBased = req.user.is_variant_based;
 
     // Set product attribute values before saving product attribute values
     const productAttributeValues = [];
@@ -484,6 +498,7 @@ exports.UpdateProduct = async (req, res) => {
   try {
     const productId = Number(req.params.id);
     const productData = req.body;
+
     const dynamicAttributes = productData.dynamic_attributes;
     delete productData.dynamic_attributes;
 
@@ -562,72 +577,8 @@ exports.UpdateProduct = async (req, res) => {
       await ProductAttributeValue.bulkCreate(attributesToCreate);
     }
 
-    // Handle file upload to S3
-    // if (req.file) {
-    //   const company_id = req.user?.company_id;
-
-    //   // Fetch company name from the database
-    //   const company = await Company.findOne({
-    //     where: { id: company_id },
-    //     attributes: ['company_name'],
-    //   });
-    //   const companyName = company?.company_name || "DefaultCompany";
-    //   const uploadResult = await UploadFileToAWS(req.file, companyName);
-    //   if (uploadResult.status) {
-    //     updateFields.attachment_file = uploadResult.url;
-    //   } else {
-    //     return res.status(500).json({ status: false, message: uploadResult.message });
-    //   }
-    // }
-
-    // Map sectionData to updateFields
-    // if (sectionData.product_name)
-    //   updateFields.product_name = sectionData.product_name;
-    // if (sectionData.sku_product)
-    //   updateFields.sku_product = sectionData.sku_product;
-   
-    // if (sectionData.product_code)
-    //   updateFields.product_code = sectionData.product_code;
-    // if (sectionData.type) updateFields.product_type = sectionData.type;
-    // if (sectionData.product_category)
-    //   updateFields.product_category = sectionData.product_category;
-    // if (sectionData.unit) updateFields.unit = sectionData.unit;
-    // if (sectionData.tax) updateFields.tax = sectionData.tax;
-    // if (sectionData.hsnCode) updateFields.hsn_code = sectionData.hsnCode;
-    // if (sectionData.product_price)
-    //   updateFields.product_price = sectionData.product_price;
-    // if (sectionData.regular_buying_price)
-    //   updateFields.regular_buying_price = sectionData.regular_buying_price;
-    // if (sectionData.regular_selling_price)
-    //   updateFields.regular_selling_price = sectionData.regular_selling_price;
-    // if (sectionData.dealer_price)
-    //   updateFields.dealer_price = sectionData.dealer_price;
-    // if (sectionData.wholesale_buying_price)
-    //   updateFields.wholesale_buying_price = sectionData.wholesale_buying_price;
-    // if (sectionData.mrp) updateFields.mrp = sectionData.mrp;
-    // if (sectionData.distributor_price)
-    //   updateFields.distributor_price = sectionData.distributor_price;
-    // if (sectionData.total_stock)
-    //   updateFields.total_stock = sectionData.total_stock;
-    // if (sectionData.minimum_stock_level)
-    //   updateFields.minimum_stock_level = sectionData.minimum_stock_level;
-    // if (sectionData.reject_stock)
-    //   updateFields.reject_stock = sectionData.reject_stock;
-    // if (sectionData.maximum_stock_level)
-    //   updateFields.maximum_stock_level = sectionData.maximum_stock_level;
-    // if (sectionData.safety_stock)
-    //   updateFields.safety_stock = sectionData.safety_stock;
-    // if (sectionData.sku_description)
-    //   updateFields.sku_description = sectionData.sku_description;
-    // if (sectionData.replenishment_time)
-    //   updateFields.replenishment_time = sectionData.replenishment_time;
-    // if (sectionData.replenishment_multiplications)
-    //   updateFields.replenishment_multiplications =
-    //     sectionData.replenishment_multiplications;
-    // if (sectionData.minimum_replenishment)
-    //   updateFields.minimum_replenishment = sectionData.minimum_replenishment;
-    // if (sectionData.buffer_size)
-    //   updateFields.buffer_size = sectionData.buffer_size;
+    productData.is_batch_applicable = parseInt(productData.is_batch_applicable);
+    productData.markup_percentage = parseFloat(productData.markup_percentage);
 
     // Update the product with the new data
     await Product.update(productData, {
@@ -3187,25 +3138,78 @@ exports.GetStoreWiseStock = async (req, res) => {
  * if stock entry quantity is not updated, returns error message
  */
 exports.UpdateStockEntry = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { product_id, warehouse_id, quantity } = req.body;
+    const { product_id, warehouse_id, quantity, product_variant_id } = req.body;
 
     // check if the stock entry exists
-    const stockEntry = await ProductStockEntry.findOne({
-      attributes: ['id', 'quantity'],
-      where: { id, product_id, warehouse_id },
-      raw: true,
-    });
+    const wherecondition = {
+      company_id: req.user.company_id,
+      id: id,
+    };
+    // get the stock entry
+    const [productStockEntry, trackProductStock] = await Promise.all([
+      ProductStockEntry.findOne({
+        attributes: ['id', 'quantity'],
+        where: wherecondition,
+        raw: true,
+        nest: true,
+        include: [
+          {
+            association: 'product',
+            attributes: ['id', 'product_name'],
+          }
+        ]
+      }),
+      TrackProductStock.findOne({
+        attributes: ['id', 'final_quantity', 'default_price'],
+        where: {
+          company_id: req.user.company_id,
+          product_id: product_id, 
+          store_id: warehouse_id,
+          ...(product_variant_id ? { product_variant_id: product_variant_id } : {}),
+        },
+        order: [['id', 'DESC']],
+        limit: 1,
+      }),
+    ]);
     // if the stock entry does not exist, return 404
-    if (!stockEntry) {
+    if (!productStockEntry) {
       return res.status(404).json({ status: false, message: "Stock entry not found" });
     }
+
+    // calculate the new quantity
+    const finalStockQuantity = parseInt(quantity) + parseInt(productStockEntry.quantity);
     // update the stock entry
-    await ProductStockEntry.update({ quantity }, { where: { id } });
+    await ProductStockEntry.update({ quantity: finalStockQuantity }, { where: { id: productStockEntry.id }, transaction });
+
+    // create a new track product stock entry
+    await TrackProductStock.create({
+      product_id: product_id,
+      store_id: warehouse_id,
+      user_id: req.user.id,
+      company_id: req.user.company_id,
+      product_variant_id: product_variant_id ?? null,
+      item_name: productStockEntry.product.product_name,
+      default_price: trackProductStock ? trackProductStock.default_price : 0,
+      item_unit: 1,
+      quantity_changed: quantity,
+      final_quantity: trackProductStock ? parseInt(trackProductStock.final_quantity) + parseInt(quantity) : parseInt(quantity),
+      status_in_out: 1,
+      reference_number: "INV" + Math.floor(1000000 + Math.random() * 9000000),
+      barcode_number: Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString(),
+    }, { transaction });
+
+    // commit transaction
+    await transaction.commit();
     // return success message
     return res.status(200).json({ status: true, message: "Stock entry updated successfully" });
   } catch (error) {
+    // rollback transaction if error occurs
+    if (transaction) {
+      await transaction.rollback();
+    }
     console.error("Update stock entry error:", error);
     return res.status(500).json({ status: false, message: "Error updating stock entry", error: error.message });
   }

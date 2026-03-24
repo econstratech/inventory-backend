@@ -44,29 +44,15 @@ const { GeneralSettings } = require('./CompanyModel');
 const ProductVariant = require('./ProductVariant');
 const ServiceAuditLog = require('./ServiceAuditLog');
 
-User.belongsTo(Company, {
-    foreignKey: 'company_id',
-    as: 'company'
-});
-Company.hasOne(GeneralSettings, {
-    foreignKey: 'company_id',
-    as: 'generalSettings'
-});
+User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
+Company.hasMany(User, { foreignKey: 'company_id', as: 'users' });
 
-Customer.hasOne(Customerbank, {
-    constraints: false,
-    foreignKey: 'customer_id',
-    as: 'bank'
-});
+Customer.hasOne(Customerbank, { constraints: false, foreignKey: 'customer_id', as: 'bank' });
 
-Product.hasOne(FinishedGoods, {
-    foreignKey: "product_id",
-    as: "FinishedGoodsItem",
-});
-Product.belongsTo(ProductCategory, {
-    foreignKey: 'product_category_id',
-    as: 'productCategory'
-});
+Product.hasOne(FinishedGoods, { foreignKey: "product_id", as: "FinishedGoodsItem" });
+Product.belongsTo(ProductCategory, { foreignKey: 'product_category_id', as: 'productCategory' });
+
 Product.belongsTo(MasterBrand, {
     foreignKey: 'brand_id',
     as: 'masterBrand'

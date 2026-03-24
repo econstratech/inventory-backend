@@ -37,23 +37,37 @@ exports.GetActiveCompany = async (req, res) => {
             'company_name', 
             'company_email', 
             'company_phone',
+            'renew_date',
             'c_p_isd',
             'p_isd',
             'address', 
-            'gst', 
+            'whatsapp_number',
+            // 'whatsapp_no',
+            'w_isd',
             'contact_name',
             'contact_email',
             'contact_phone',
-            'company_alternate_phone',
-            'alternet_p_isd',
+            // 'company_alternate_phone',
+            // 'alternet_p_isd',
             'status', 
             'created_at'
         ],
         where: whereCondition,
-        raw: true,
         limit: parseInt(limit, 10),
         offset,
         order: [["created_at", "DESC"]],
+        include: [
+            {
+                association: 'users',
+                attributes: ['id', 'name', 'email', 'phone_number', 'p_isd'],
+                where: { status: 1, position: 'Owner' },
+                order: [['id', 'DESC']],
+                limit: 1,
+            }, {
+                association: 'generalSettings',
+                attributes: ['id', 'currency_code', 'currency_name', 'symbol', 'timezone', 'companyAddress', 'is_variant_based'],
+            }
+        ]
     });
 
     // Get paginated data
@@ -148,7 +162,9 @@ exports.CreateCompany = async (req, res) => {
         // sanitize the request body
         const { 
             company_name, 
-            company_email, 
+            company_email,
+            owner_name,
+            owner_email,
             company_phone, 
             isd, 
             address, 
@@ -200,14 +216,14 @@ exports.CreateCompany = async (req, res) => {
 
         // Create owner user
         await User.create({
-            name: contact_name ?? null,
-            username: contact_email ?? null,
+            name: owner_name ?? null,
+            username: owner_email ?? null,
             position: 'Owner',
-            phone_number: contact_phone ?? null,
-            p_isd: isd ?? '+91',
-            whatsapp_no: whatsapp_no ?? null,
-            w_isd: w_isd,
-            email: contact_email ?? null,
+            // phone_number: contact_phone ?? null,
+            // p_isd: isd ?? '+91',
+            // whatsapp_no: whatsapp_no ?? null,
+            // w_isd: w_isd,
+            email: owner_email ?? null,
             user_password: await bcrypt.hash(password, 10),
             company_id: company.id,
             role: JSON.stringify([]),
@@ -244,7 +260,11 @@ exports.CreateCompany = async (req, res) => {
         await transaction.commit();
 
         // return the success response
-        return res.status(200).json({ success: true, message: "New company has been created" })
+        return res.status(200).json({ 
+            success: true, 
+            message: "New company has been created",
+            data: company
+        });
     } catch (error) {
         // rollback the transaction if error occurs
         if (transaction) {
