@@ -53,10 +53,8 @@ Customer.hasOne(Customerbank, { constraints: false, foreignKey: 'customer_id', a
 Product.hasOne(FinishedGoods, { foreignKey: "product_id", as: "FinishedGoodsItem" });
 Product.belongsTo(ProductCategory, { foreignKey: 'product_category_id', as: 'productCategory' });
 
-Product.belongsTo(MasterBrand, {
-    foreignKey: 'brand_id',
-    as: 'masterBrand'
-});
+Product.belongsTo(MasterBrand, { foreignKey: 'brand_id', as: 'masterBrand' });
+Product.belongsTo(MasterUOM, {foreignKey: 'uom_id', as: 'masterUOM'});
 
 FinishedGoods.belongsTo(Product, {
     foreignKey: "product_id",

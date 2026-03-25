@@ -10,7 +10,13 @@
  * /api/purchase/add:
  *   post:
  *     summary: Create a new purchase order
- *     description: Creates a new purchase order with associated products. A unique reference number is automatically generated. The purchase order total amount is calculated from the products and updated automatically.
+ *     description: |
+ *       Creates a new purchase order with associated products. A unique reference number is automatically generated (prefix `P`). The purchase order total amount is recalculated from line items and saved.
+ *
+ *       **Initial status** is derived from optional flags (not a raw `status` field in the body):
+ *       - If `send_to_management` is truthy → status **3** (pending approval).
+ *       - Else if `send_to_vendor` is truthy → status **5** (GRN pending).
+ *       - Else → status **2** (active).
  *     tags: [Purchase]
  *     security:
  *       - bearerAuth: []
@@ -77,6 +83,14 @@
  *                 description: Associated sales quotation ID (optional)
  *                 example: 100
  *                 nullable: true
+ *               send_to_management:
+ *                 type: boolean
+ *                 description: If true, PO is created with status 3 (pending approval). Takes precedence over `send_to_vendor`.
+ *                 example: false
+ *               send_to_vendor:
+ *                 type: boolean
+ *                 description: If true (and `send_to_management` is false), PO is created with status 5 (GRN pending). Otherwise, when both flags are false, status is 2 (active).
+ *                 example: false
  *               products:
  *                 type: array
  *                 description: Array of products to add to the purchase order
@@ -140,6 +154,8 @@
  *             warehouse_id: 1
  *             mailsend_status: "0"
  *             sales_quotation_id: 100
+ *             send_to_management: false
+ *             send_to_vendor: false
  *             products:
  *               - product_id: 12
  *                 description: "High quality product"

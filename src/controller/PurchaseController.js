@@ -75,7 +75,8 @@ exports.AddPurchase = async (req, res) => {
         is_parent_id: req.body.is_parent_id,
         warehouse_id: req.body.warehouse_id ?? null,
         mailsend_status: req.body.mailsend_status || '0',
-        sale_id: req.body.sales_quotation_id || null
+        sale_id: req.body.sales_quotation_id || null,
+        status: req.body.send_to_management ? 3 : req.body.send_to_vendor ? 5 : 2
       },
       { transaction }
     );
@@ -2138,6 +2139,7 @@ exports.generatePDFForvendor = async (req, res) => {
   const { id } = req.params;
 
   try {
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
     // Get purchase data
     const purchase = await Purchase.findOne({
       attributes: ['id', 'reference_number', 'total_amount', 'expected_arrival', 'untaxed_amount'],
@@ -2249,18 +2251,18 @@ exports.generatePDFForvendor = async (req, res) => {
       products: purchase.products.map(product => ({
         description: product.ProductsItem.product_name,
         product_code: product.ProductsItem.product_code,
-        brand: product.ProductsItem.masterBrand.name,
+        brand: product.ProductsItem?.masterBrand?.name,
         tax: product.tax,
         dateReq: new Date(purchase.expected_arrival).toLocaleString(),
         qty: product.qty,
         unitPrice: parseFloat(product.unit_price).toFixed(2),
         amount: parseFloat(product.taxExcl).toFixed(2),
-        weight_per_unit: `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}`,
-        total_weight: CommonHelper.formatTotalWeight(
+        weight_per_unit: isVariantBased ? `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}` : "",
+        total_weight: isVariantBased ? CommonHelper.formatTotalWeight(
           product.productVariant.weight_per_unit,
           product.qty,
           product.productVariant.masterUOM.label
-        ),
+        ) : "",
       })),
       customer: {
         name: purchase.vendor.vendor_name,

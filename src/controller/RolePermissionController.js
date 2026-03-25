@@ -83,6 +83,41 @@ exports.GetAllPermissions = async (req, res) => {
 }
 
 /**
+ * Get module wise permissions
+ * @param {Object} req - Request object
+ * @param {number} req.query.module_id - Module ID
+ * @param {Object} res - Response object
+ * @param {number} res.status - Response status
+ * @param {string} res.message - Response message
+ * @param {array} res.data - Module wise permissions array
+ * @returns {Promise<void>}
+ */
+exports.ModuleWisePermissions = async (req, res) => {
+    try {
+        const { module_id } = req.query;
+
+        // Get module wise permissions
+        const permissions = await Module.findAll({
+            attributes: ["id", "name"],
+            ...(module_id && { where: { id: module_id } }),
+            include: [
+                { association: "permissions", attributes: ["id", "name", "label", "guard_name"] }
+            ]
+        });
+
+        // return response
+        return res.status(200).json({ 
+            status: true, 
+            message: "Module wise permissions retrieved successfully", 
+            data: permissions 
+        });
+    } catch (error) {
+        console.error("Error retrieving module wise permissions:", error);
+        return res.status(500).json({ status: false, message: "Internal Server Error", error: error.message });
+    }
+}
+
+/**
  * Create role
  * @param {Object} req - Request object
  * @param {string} req.body.name - Role name

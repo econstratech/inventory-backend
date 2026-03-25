@@ -646,6 +646,7 @@ exports.GetAllProducts = async (req, res) => {
   try {
     const company_id = req.user.company_id;
     const { type } = req.query;
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -700,12 +701,20 @@ exports.GetAllProducts = async (req, res) => {
           attributes: ["name"],
           required: false,
         },
+        ...(!isVariantBased ? [{
+          association: "masterUOM",
+          attributes: ["name", "label"],
+        }] : []),
       ];
     }
 
     // Full product listing
     else {
       include = [
+        ...(!isVariantBased ? [{
+          association: "masterUOM",
+          attributes: ["name", "label"],
+        }] : []),
         {
           association: "masterBrand",
           attributes: ["name"],
@@ -2389,7 +2398,7 @@ exports.AddToStock = async (req, res) => {
     const seen = new Set();
     const duplicates = [];
     const validationErrors = [];
-    const isVariantBased = req.user.is_variant_based;
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
 
     for (let i = 0; i < stockEntries.length; i++) {
       const entry = stockEntries[i];
@@ -2472,30 +2481,64 @@ exports.AddToStock = async (req, res) => {
     transaction = await sequelize.transaction();
 
     // Prepare entries for bulk insert
-    const entriesToCreate = stockEntries.map(entry => ({
-      company_id: req.user.company_id,
-      product_id: entry.product_id,
-      ...(isVariantBased ? { product_variant_id: entry.product_variant_id } : {}),
-      warehouse_id: entry.warehouse_id,
-      buffer_size: entry.buffer_size,
-      user_id: req.user.id,
-      quantity: entry.quantity
-    }));
+    const entriesToCreate = [];
+    const trackProductstockEntries = [];
 
-    // Bulk create stock entries
-    const createdEntries = await ProductStockEntry.bulkCreate(entriesToCreate, {
-      transaction,
-      returning: true
+    stockEntries.forEach(entry => {
+      const entryToCreate = {
+        company_id: req.user.company_id,
+        product_id: entry.product_id,
+        ...(isVariantBased ? { product_variant_id: entry.product_variant_id } : {}),
+        warehouse_id: entry.warehouse_id,
+        buffer_size: entry.buffer_size,
+        user_id: req.user.id,
+        quantity: entry.quantity
+      };
+      const trackProductstockEntry = {
+        product_id: entry.product_id,
+        ...(isVariantBased ? { product_variant_id: entry.product_variant_id } : {}),
+        store_id: entry.warehouse_id,
+        user_id: req.user.id,
+        company_id: req.user.company_id,
+        quantity_changed: entry.quantity,
+        final_quantity: entry.quantity,
+        status_in_out: 1,
+        reference_number: "INV" + Math.floor(1000000 + Math.random() * 9000000),
+        barcode_number: Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString(),
+        item_name: entry.product_name || null,
+        default_price: entry.default_price,
+        item_unit: entry.uom,
+        final_quantity: entry.quantity,
+        comment: "Stock added from bulk add to stock from web app",
+        adjustmentType: "Stock added from bulk add to stock from web app",
+        is_dispatched: 0,
+      }
+      entriesToCreate.push(entryToCreate);
+      trackProductstockEntries.push(trackProductstockEntry);
     });
+
+    // Bulk create stock entries and track product stock entries
+    const [createdEntries, createdTrackProductstockEntries] = await Promise.all([
+      ProductStockEntry.bulkCreate(entriesToCreate, {
+        transaction,
+        returning: true
+      }),
+      TrackProductStock.bulkCreate(trackProductstockEntries, {
+        transaction,
+        returning: true
+      })
+    ]);
 
     // Commit transaction
     await transaction.commit();
 
+    // Return success message and created entries
     return res.status(200).json({
       status: true,
       message: `${createdEntries.length} stock entries added successfully`,
       data: createdEntries
     });
+    
 
   } catch (error) {
     // Rollback transaction if error occurred
@@ -2519,6 +2562,14 @@ const BULK_STOCK_HEADERS = {
   WEIGHT_PER_UNIT: 'Weight Per Unit',
   QUANTITY: 'Quantity',
   BUFFER_SIZE: 'Buffer Size',
+};
+
+/** Get value from row */
+const getValue = (row, key) => {
+  const foundKey = Object.keys(row).find(
+    k => k.trim().toLowerCase() === key.toLowerCase()
+  );
+  return foundKey ? row[foundKey] : undefined;
 };
 
 /**
@@ -2561,26 +2612,31 @@ exports.BulkAddToStock = async (req, res) => {
        STEP 1: Aggregate (product_code + store_name + uom + weight_per_unit)
        ----------------------------------------------------- */
 
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
     const aggregated = new Map();
 
     for (const row of rows) {
-      const product_code = String(row[BULK_STOCK_HEADERS.PRODUCT_CODE] || '').trim();
-      const store_name = String(row[BULK_STOCK_HEADERS.STORE_NAME] || '').trim();
+      const product_code = String(getValue(row, BULK_STOCK_HEADERS.PRODUCT_CODE) || '').trim();
+      const store_name = String(getValue(row, BULK_STOCK_HEADERS.STORE_NAME) || '').trim();
+      const quantityRaw = getValue(row, BULK_STOCK_HEADERS.QUANTITY);
+      const quantity = Number(String(quantityRaw || '').replace(/,/g, '').trim());
+
       const uom = String(row[BULK_STOCK_HEADERS.UOM] || '').trim();
       const weight_per_unit = Number(row[BULK_STOCK_HEADERS.WEIGHT_PER_UNIT] || 0);
-      const quantity = Number(row[BULK_STOCK_HEADERS.QUANTITY]);
       const buffer_size = Number(row[BULK_STOCK_HEADERS.BUFFER_SIZE] || 0);
 
       if (
         !product_code ||
         !store_name ||
-        !uom ||
-        isNaN(weight_per_unit) ||
+        (!uom && isVariantBased) ||
+        (isVariantBased && !weight_per_unit) ||
         isNaN(quantity) ||
         quantity < 0
       ) continue;
 
-      const key = `${product_code}__${store_name}__${uom}__${weight_per_unit}`;
+      const key = isVariantBased
+      ? `${product_code}__${store_name}__${uom}__${weight_per_unit}`
+      : `${product_code}__${store_name}`;
 
       if (!aggregated.has(key)) {
         aggregated.set(key, { quantity: 0, buffer_size });
@@ -2589,8 +2645,8 @@ exports.BulkAddToStock = async (req, res) => {
       const entry = aggregated.get(key);
       entry.quantity += quantity;
       entry.buffer_size = buffer_size; // last value wins
-      entry.uom = uom;
-      entry.weight_per_unit = weight_per_unit;
+      entry.uom = isVariantBased ? uom : null;
+      entry.weight_per_unit = isVariantBased ? weight_per_unit : null;
     }
 
     if (!aggregated.size) {
@@ -2602,12 +2658,13 @@ exports.BulkAddToStock = async (req, res) => {
     }
 
     const rowsToProcess = [...aggregated.entries()].map(([key, val]) => {
-      const [product_code, store_name, uom, weightPerUnit] = key.split('__');
+      const parts = key.split('__');
+
       return {
-        product_code,
-        store_name,
-        uom,
-        weight_per_unit: Number(weightPerUnit),
+        product_code: parts[0],
+        store_name: parts[1],
+        uom: isVariantBased ? parts[2] : null,
+        weight_per_unit: isVariantBased ? Number(parts[3]) : null,
         ...val,
       };
     });
@@ -2618,8 +2675,13 @@ exports.BulkAddToStock = async (req, res) => {
 
     const productCodes = [...new Set(rowsToProcess.map(r => r.product_code))];
     const storeNames = [...new Set(rowsToProcess.map(r => r.store_name))];
-    const uoms = [...new Set(rowsToProcess.map(r => r.uom))];
-    const weight_per_units = [...new Set(rowsToProcess.map(r => r.weight_per_unit))];
+    const uoms = isVariantBased
+      ? [...new Set(rowsToProcess.map(r => r.uom))]
+      : [];
+  
+    const weight_per_units = isVariantBased
+      ? [...new Set(rowsToProcess.map(r => r.weight_per_unit))]
+      : [];
 
     const [products, warehouses, masterUoms] = await Promise.all([
       Product.findAll({
@@ -2632,7 +2694,7 @@ exports.BulkAddToStock = async (req, res) => {
         attributes: ['id', 'name'],
         raw: true,
       }),
-      MasterUOM.findAll({
+      !isVariantBased ? [] : MasterUOM.findAll({
         where: {
           [Op.or]: [
             { label: uoms },
@@ -2647,15 +2709,17 @@ exports.BulkAddToStock = async (req, res) => {
     const productMap = new Map(products.map(p => [p.product_code, p.id]));
     const warehouseMap = new Map(warehouses.map(w => [w.name, w.id]));
     const uomMap = new Map();
-    for (const u of masterUoms) {
-      if (u.label) uomMap.set(String(u.label).trim().toLowerCase(), u.id);
-      if (u.name) uomMap.set(String(u.name).trim().toLowerCase(), u.id);
+    if (isVariantBased) {
+      for (const u of masterUoms) {
+        if (u.label) uomMap.set(String(u.label).trim().toLowerCase(), u.id);
+        if (u.name) uomMap.set(String(u.name).trim().toLowerCase(), u.id);
+      }
     }
 
     const productIds = [...new Set(products.map(p => p.id))];
-    const uomIds = [...new Set(masterUoms.map(u => u.id))];
+    const uomIds = isVariantBased ? [...new Set(masterUoms.map(u => u.id))] : [];
     const variants =
-      productIds.length && uomIds.length
+      isVariantBased && productIds.length && uomIds.length
         ? await ProductVariant.findAll({
             where: {
               company_id: companyId,
@@ -2668,12 +2732,12 @@ exports.BulkAddToStock = async (req, res) => {
           })
         : [];
 
-    const variantMap = new Map(
+    const variantMap = isVariantBased ? new Map(
       variants.map(v => [
         `${v.product_id}_${v.uom_id}_${Number(v.weight_per_unit)}`,
         v.id,
       ])
-    );
+    ) : new Map();
 
     /* -----------------------------------------------------
        STEP 3: Resolve IDs
@@ -2685,36 +2749,48 @@ exports.BulkAddToStock = async (req, res) => {
     for (const r of rowsToProcess) {
       const product_id = productMap.get(r.product_code);
       const warehouse_id = warehouseMap.get(r.store_name);
-      const uom_id = uomMap.get(String(r.uom).trim().toLowerCase());
-
+    
+      const uom_id = isVariantBased
+        ? uomMap.get(String(r.uom).trim().toLowerCase())
+        : null;
+    
       if (!product_id) {
         errors.push({ ...r, reason: 'Product not found' });
         continue;
       }
-
+    
       if (!warehouse_id) {
         errors.push({ ...r, reason: 'Store not found' });
         continue;
       }
-
-      if (!uom_id) {
+    
+      // ✅ Only validate UOM if variant-based
+      if (isVariantBased && !uom_id) {
         errors.push({ ...r, reason: 'UOM not found' });
         continue;
       }
-
-      const variantKey = `${product_id}_${uom_id}_${Number(r.weight_per_unit)}`;
-      console.log("variantKey", variantKey);
-      console.log("variantMap", variantMap);
-      const product_variant_id = variantMap.get(variantKey);
-      if (!product_variant_id) {
-        errors.push({
-          ...r,
-          reason: 'Product variant not found for UOM and Weight Per Unit',
-        });
-        continue;
+    
+      let product_variant_id = null;
+    
+      if (isVariantBased) {
+        const variantKey = `${product_id}_${uom_id}_${Number(r.weight_per_unit)}`;
+        product_variant_id = variantMap.get(variantKey);
+    
+        if (!product_variant_id) {
+          errors.push({
+            ...r,
+            reason: 'Product variant not found for UOM and Weight Per Unit',
+          });
+          continue;
+        }
       }
-
-      resolved.push({ product_id, warehouse_id, product_variant_id, ...r });
+    
+      resolved.push({
+        product_id,
+        warehouse_id,
+        product_variant_id, // will be null if not variant-based
+        ...r,
+      });
     }
 
     if (!resolved.length) {
@@ -2735,7 +2811,7 @@ exports.BulkAddToStock = async (req, res) => {
         [Op.or]: resolved.map(r => ({
           product_id: r.product_id,
           warehouse_id: r.warehouse_id,
-          product_variant_id: r.product_variant_id,
+          product_variant_id: r.product_variant_id || null,
         })),
       },
       attributes: ['id', 'product_id', 'warehouse_id', 'product_variant_id', 'quantity'],
@@ -2744,18 +2820,23 @@ exports.BulkAddToStock = async (req, res) => {
     });
 
     const existingMap = new Map(
-      existing.map(e => [`${e.product_id}_${e.warehouse_id}_${e.product_variant_id}`, e])
+      existing.map(e => [
+        isVariantBased
+          ? `${e.product_id}_${e.warehouse_id}_${e.product_variant_id}`
+          : `${e.product_id}_${e.warehouse_id}`,
+        e,
+      ])
     );
 
     const toCreate = [];
     const toUpdate = [];
+    const trackProductstockEntries = [];
 
     for (const r of resolved) {
-      const key = `${r.product_id}_${r.warehouse_id}_${r.product_variant_id}`;
+      const key = isVariantBased
+        ? `${r.product_id}_${r.warehouse_id}_${r.product_variant_id}`
+        : `${r.product_id}_${r.warehouse_id}`;
       const found = existingMap.get(key);
-
-      console.log("KEY", key);
-      console.log("found", found);
 
       if (found) {
         toUpdate.push({
@@ -2767,23 +2848,46 @@ exports.BulkAddToStock = async (req, res) => {
         toCreate.push({
           company_id: companyId,
           product_id: r.product_id,
-          product_variant_id: r.product_variant_id,
+          product_variant_id: r.product_variant_id || null,
           warehouse_id: r.warehouse_id,
           quantity: r.quantity,
           buffer_size: r.buffer_size,
           user_id: userId,
         });
       }
+
+      const trackProductstockEntry = {
+        product_id: r.product_id,
+        product_variant_id: r.product_variant_id || null,
+        store_id: r.warehouse_id,
+        user_id: userId,
+        company_id: companyId,
+        quantity_changed: r.quantity,
+        final_quantity: r.quantity,
+        status_in_out: 1,
+        reference_number: "INV" + Math.floor(1000000 + Math.random() * 9000000),
+        barcode_number: Math.floor(1000000000000000 + Math.random() * 9000000000000000).toString(),
+        item_name: r.product_name || null,
+        default_price: r.default_price || 0,
+        item_unit: r.uom,
+        final_quantity: r.quantity,
+        comment: "Stock added from bulk add to stock by CSV file",
+        adjustmentType: "Stock added from bulk add to stock by CSV file",
+        is_dispatched: 0,
+      }
+      trackProductstockEntries.push(trackProductstockEntry);
     }
 
     /* -----------------------------------------------------
        STEP 5: DB Operations
        ----------------------------------------------------- */
 
-    if (toCreate.length) {
+    // Bulk create stock entries
+    if (toCreate.length > 0) {
       await ProductStockEntry.bulkCreate(toCreate, { transaction });
     }
 
+    // Bulk update stock entries
     for (const row of toUpdate) {
       await ProductStockEntry.update(
         {
@@ -2794,14 +2898,23 @@ exports.BulkAddToStock = async (req, res) => {
       );
     }
 
+    // Bulk create track product stock entries
+    if (trackProductstockEntries.length > 0) {
+      await TrackProductStock.bulkCreate(trackProductstockEntries, { transaction });
+    }
+
+    // Commit transaction
     await transaction.commit();
 
+    // Return success message and created entries
     return res.status(200).json({
       status: true,
-      message: 'Bulk add to stock completed.',
-      created: toCreate.length,
-      updated: toUpdate.length,
-      errors: errors.length ? errors : undefined,
+      message: `${toCreate.length} stock entries added and ${toUpdate.length} stock entries updated successfully`,
+      data: {
+        created_stock_entries: toCreate.length,
+        updated_stock_entries: toUpdate.length,
+        track_product_stock_entries: trackProductstockEntries.length,
+      }
     });
 
   } catch (error) {
