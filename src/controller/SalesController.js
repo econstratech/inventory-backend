@@ -81,6 +81,7 @@ exports.AddSellQuotation = async (req, res) => {
         user_id: req.user.id,
         company_id: req.user.company_id,
         mailsend_status: req.body.mailsend_status || 0,
+        status: req.body.send_to_management ? 3 : req.body.send_to_floor_manager ? 9 : 2
       },
       { transaction }
     );
@@ -749,6 +750,7 @@ exports.getSalesQuotation = async (req, res) => {
   try {
     const { id } = req.params;
     const { type } = req.query;
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
 
     const relationsWithIndividualProduct = [
       {
@@ -765,6 +767,7 @@ exports.getSalesQuotation = async (req, res) => {
           }
         ]
       },
+      ...(isVariantBased ? [
       {
         association: 'productVariants',
         attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
@@ -774,7 +777,8 @@ exports.getSalesQuotation = async (req, res) => {
             attributes: ['id', 'name', 'label'],
           }
         ]
-      },
+      }
+      ] : []),
       {
         association: 'masterBrand',
         attributes: ['id', 'name'],
@@ -786,7 +790,13 @@ exports.getSalesQuotation = async (req, res) => {
       {
         association: 'productCategory',
         attributes: ['id', 'title'],
-      }
+      },
+      ...(!isVariantBased ? [
+        {
+          association: 'masterUOM',
+          attributes: ['id', 'name', 'label'],
+        }
+      ] : []),
     ];
 
     const relationships = [
@@ -815,16 +825,18 @@ exports.getSalesQuotation = async (req, res) => {
                   association: 'user',
                   attributes: ['id', 'name'],
                 },
-                {
-                  association: 'productVariant',
-                  attributes: ['id', 'weight_per_unit'],
-                  include: [
-                    {
-                      association: 'masterUOM',
-                      attributes: ['id', 'name', 'label'],
-                    }
-                  ]
-                }
+                ...(isVariantBased ? [
+                  {
+                    association: 'productVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [
+                      {
+                        association: 'masterUOM',
+                        attributes: ['id', 'name', 'label'],
+                      }
+                    ]
+                  }
+                ] : []),
               ]
             },
             { 
@@ -839,7 +851,8 @@ exports.getSalesQuotation = async (req, res) => {
               ...relationsWithIndividualProduct
             ]
           },
-          {
+          ...(isVariantBased ? [
+            {
             association: 'productVariant',
             attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
             include: [
@@ -849,6 +862,7 @@ exports.getSalesQuotation = async (req, res) => {
               }
             ]
           }
+          ] : []),
         ],
       },
       { 
@@ -1047,22 +1061,22 @@ exports.getPurchasecompareManagment = async (req, res) => {
 
 
 exports.StatusUpdate = async (req, res) => {
-  const { id: purchaseId, sid: statusId } = req.params;
+  const { id: saleOrderId, sid: statusId } = req.params;
   const transaction = await sequelize.transaction();
 
   try {
-    if (!purchaseId || isNaN(purchaseId)) {
+    if (!saleOrderId || isNaN(saleOrderId)) {
       return res.status(400).json({ error: "Invalid purchase ID" });
     }
 
-    const parsedStatus = parseInt(statusId);
+    const saleOrderStatus = parseInt(statusId);
 
     const updateFields = {
       //status: parsedStatus === 10 || parsedStatus === 11 ? 9 : parsedStatus,
-      status: parsedStatus,
+      status: saleOrderStatus,
     };
 
-    if (parsedStatus === 10 || parsedStatus === 11) {
+    if (saleOrderStatus === 10 || saleOrderStatus === 11) {
       updateFields.mailsend_status = 1;
     }
     // when floor manager direct dispatch
@@ -1083,13 +1097,13 @@ exports.StatusUpdate = async (req, res) => {
 
     //   // 2. Get Sales Products with Product Details
     const updateFieldsPdata = {
-      status: parsedStatus,
+      status: saleOrderStatus,
     };
 
     const purchaseProducts = await SalesProduct.findAll({
       attributes: ['id', 'status', 'warehouse_id', 'qty'],
       where: {
-        sales_id: purchaseId,
+        sales_id: saleOrderId,
       },
       include: [
         {
@@ -1138,7 +1152,7 @@ exports.StatusUpdate = async (req, res) => {
       return res.status(400).json({ message: "No products found for this purchase." });
     } else {
       await SalesProduct.update(updateFieldsPdata, {
-        where: { sales_id: purchaseId },
+        where: { sales_id: saleOrderId },
         transaction,
       });
     }
@@ -1231,18 +1245,24 @@ exports.StatusUpdate = async (req, res) => {
     // end the update
 
     await Sale.update(updateFields, {
-      where: { id: purchaseId },
+      where: { id: saleOrderId },
       transaction,
     });
 
+    // commit the transaction
     await transaction.commit();
 
-    return res.status(200).json({ message: "Records Updated Successfully" });
+    // return the response
+    return res.status(200).json({ 
+      status: true,
+      message: "Sale order status updated successfully",
+      data: null,
+    });
   } catch (error) {
     await transaction.rollback();
     console.error("Transaction rolled back due to error:", error);
     return res.status(500).json({
-      error: "An error occurred while updating the purchase status",
+      error: "An error occurred while updating the sale order status",
     });
   }
 };
@@ -2244,6 +2264,7 @@ exports.generatePDFForvendor = async (req, res) => {
   const { id } = req.params;
 
   try {
+    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
     const salesOrder = await Sale.findOne({
       attributes: [
         'id', 
@@ -2355,12 +2376,12 @@ exports.generatePDFForvendor = async (req, res) => {
         qty: product.qty,
         unitPrice: parseFloat(product.unit_price).toFixed(2),
         amount: parseFloat(product.taxExcl).toFixed(2),
-        weight_per_unit: `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}`,
-        total_weight: CommonHelper.formatTotalWeight(
+        weight_per_unit: isVariantBased ? `${product.productVariant.weight_per_unit} ${product.productVariant.masterUOM.label}` : "",
+        total_weight: isVariantBased ? CommonHelper.formatTotalWeight(
           product.productVariant.weight_per_unit,
           product.qty,
           product.productVariant.masterUOM.label
-        ),
+        ) : "",
       })),
       customer: {
         name: customer?.name || "",

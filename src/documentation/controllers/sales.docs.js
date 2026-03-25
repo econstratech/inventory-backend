@@ -9,7 +9,14 @@
  * @swagger
  * /api/sales/add:
  *   post:
- *     summary: Create a new sales order
+ *     summary: Create a new sales order (sell quotation)
+ *     description: |
+ *       Creates a sales order with reference prefix `S`. Line items are stored as `SalesProduct` rows.
+ *
+ *       **Initial status** is derived from optional flags (not a raw `status` field in the body):
+ *       - If `send_to_management` is truthy → status **3** (pending approval).
+ *       - Else if `send_to_floor_manager` is truthy → status **9** (pending dispatch / floor manager).
+ *       - Else → status **2** (active).
  *     tags: [Sales]
  *     security:
  *       - bearerAuth: []
@@ -19,19 +26,131 @@
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - customer_id
+ *               - warehouse_id
+ *               - total_amount
+ *               - untaxed_amount
+ *               - products
  *             properties:
  *               customer_id:
  *                 type: integer
- *               sales_date:
+ *                 description: Customer ID
+ *                 example: 12
+ *               warehouse_id:
+ *                 type: integer
+ *                 description: Warehouse ID
+ *                 example: 10
+ *               expected_delivery_date:
  *                 type: string
  *                 format: date
- *               items:
+ *                 description: Expected delivery date
+ *                 example: "2026-04-01"
+ *               payment_terms:
+ *                 type: string
+ *                 description: Payment terms
+ *                 example: "30"
+ *               total_amount:
+ *                 type: number
+ *                 format: decimal
+ *                 description: Total amount including tax
+ *               untaxed_amount:
+ *                 type: number
+ *                 format: decimal
+ *                 description: Total amount excluding tax
+ *               is_parent:
+ *                 type: integer
+ *                 description: Parent SO flag (0 or 1)
+ *                 example: 0
+ *               is_parent_id:
+ *                 type: integer
+ *                 nullable: true
+ *                 description: Parent sales order ID if child
+ *               mailsend_status:
+ *                 type: integer
+ *                 description: Mail send status (defaults to 0)
+ *                 example: 0
+ *               vendor_id:
+ *                 type: integer
+ *                 nullable: true
+ *                 description: Stored on line items when provided
+ *               send_to_management:
+ *                 type: boolean
+ *                 description: If true, order is created with status 3 (pending approval). Takes precedence over `send_to_floor_manager`.
+ *                 example: false
+ *               send_to_floor_manager:
+ *                 type: boolean
+ *                 description: If true (and `send_to_management` is false), order is created with status 9. Otherwise, when both flags are false, status is 2 (active).
+ *                 example: false
+ *               products:
  *                 type: array
+ *                 minItems: 1
+ *                 description: Line items (product_id, variant_id, qty, prices, tax fields as used by the API)
  *                 items:
  *                   type: object
+ *                   required:
+ *                     - product_id
+ *                     - qty
+ *                     - unit_price
+ *                     - tax
+ *                     - taxExcl
+ *                     - taxIncl
+ *                   properties:
+ *                     product_id:
+ *                       type: integer
+ *                     variant_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Product variant ID
+ *                     description:
+ *                       type: string
+ *                     qty:
+ *                       type: integer
+ *                     unit_price:
+ *                       type: number
+ *                     tax:
+ *                       type: integer
+ *                     taxExcl:
+ *                       type: number
+ *                     taxIncl:
+ *                       type: number
+ *           example:
+ *             customer_id: 12
+ *             warehouse_id: 10
+ *             expected_delivery_date: "2026-04-01"
+ *             payment_terms: "30"
+ *             total_amount: 11800.00
+ *             untaxed_amount: 10000.00
+ *             is_parent: 0
+ *             is_parent_id: null
+ *             mailsend_status: 0
+ *             send_to_management: false
+ *             send_to_floor_manager: false
+ *             products:
+ *               - product_id: 100
+ *                 variant_id: 5
+ *                 description: "SKU line"
+ *                 qty: 10
+ *                 unit_price: 500.00
+ *                 tax: 18
+ *                 taxExcl: 5000.00
+ *                 taxIncl: 5900.00
  *     responses:
- *       200:
- *         description: Sales order created successfully
+ *       201:
+ *         description: Sell quotation created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Sell quotation created successfully"
+ *       500:
+ *         description: Server error
  */
 
 /**

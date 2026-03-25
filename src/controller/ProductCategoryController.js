@@ -64,7 +64,7 @@ exports.UploadCategory = async (req, res) => {
 const saveCategories = async (categories, userId, companyId) => {
   for (const category of categories) {
       await ProductCategory.create({
-          title: category.title,
+          title: category.title.trim(),
           user_id: userId,
           company_id: companyId,
       });
@@ -84,7 +84,7 @@ exports.CreateProductCategory = async (req, res) => {
         }
         // Create the category
         const productCategory = await ProductCategory.create({
-            title: req.body.title,
+            title: req.body.title.trim(),
             user_id: req.user.id,
             company_id: req.user.company_id,
         })

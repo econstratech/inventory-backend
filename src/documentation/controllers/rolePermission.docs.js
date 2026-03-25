@@ -353,6 +353,85 @@
 
 /**
  * @swagger
+ * /api/module-wise-permissions:
+ *   get:
+ *     summary: Get modules with nested permissions
+ *     description: Returns all modules (each with `id` and `name`) and their associated permissions. Optionally filter to a single module by `module_id`.
+ *     tags: [Role Permission]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: module_id
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         description: If provided, only the module with this ID is returned (still as an array with one item).
+ *         example: 4
+ *     responses:
+ *       200:
+ *         description: Module wise permissions retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Module wise permissions retrieved successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: Module ID
+ *                         example: 4
+ *                       name:
+ *                         type: string
+ *                         description: Module name
+ *                         example: "Sales"
+ *                       permissions:
+ *                         type: array
+ *                         description: Permissions belonging to this module
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 12
+ *                             name:
+ *                               type: string
+ *                               example: "sales.view"
+ *                             label:
+ *                               type: string
+ *                               example: "View"
+ *                             guard_name:
+ *                               type: string
+ *                               example: "web"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/assign-permissions-to-role/{role_id}:
  *   post:
  *     summary: Assign permissions to a role
