@@ -1594,7 +1594,7 @@ exports.GetAllPurchaseOrderRecv = async (req, res) => {
     const whereCondition = {
       company_id: req.user.company_id,
       status: {
-        [Op.in]: [2, 3, 4, 5],
+        [Op.in]: [5],
       }
     };
 
@@ -2781,6 +2781,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
               product_id: product.product_id,
               ...(product?.productVariant?.id ? { product_variant_id: product?.productVariant?.id } : {}),
               store_id: warehouse_id,
+              purchase_id: purchaseId,
               item_name: product.ProductsItem?.product_name || "",
               default_price: taxExcl || 0,
               quantity_changed: received,

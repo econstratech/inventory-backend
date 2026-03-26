@@ -192,7 +192,7 @@ exports.UpdateRole = async (req, res) => {
         // check if permissions are provided, if not return 400
         const existRole = await Role.findOne({
             attributes: ['id', 'name'],
-            where: { id: id, company_id: req.user.company_id, is_delete: 0 },
+            where: { id: id, is_delete: 0 },
             raw: true,
         });
         // check if role already exists

@@ -819,7 +819,7 @@ exports.getSalesQuotation = async (req, res) => {
           ...(type === 'dispatch' ? [
             { 
               association: 'sales_product_received', 
-              attributes: ['id', 'received_quantity', 'rejected_quantity'],
+              attributes: ['id', 'received_quantity', 'rejected_quantity', 'created_at'],
               include: [
                 {
                   association: 'user',
@@ -1282,7 +1282,11 @@ exports.receiveSalesProduct = async (req, res) => {
   let transaction = null;
   try {
     // Get the sales product
+    // check if the company is variant based
+    const isVariantBased = req.user.is_variant_based === 1 ? true : false;
     const user_id = req.user.id;
+
+    // Get the sales product details
     const salesProduct = await SalesProduct.findOne({
       attributes: [
         'id', 
@@ -1339,7 +1343,7 @@ exports.receiveSalesProduct = async (req, res) => {
     if (totalReceivedQuantity === 0 
       && (
         product_id !== parseInt(salesProduct.product_id) || 
-        product_variant_id !== parseInt(salesProduct.product_variant_id) ||
+        (isVariantBased && product_variant_id !== parseInt(salesProduct.product_variant_id)) ||
         req.body.order_quantity !== salesProduct.qty ||
         unit_price !== salesProduct.unit_price
       )) {
@@ -1362,7 +1366,7 @@ exports.receiveSalesProduct = async (req, res) => {
       updateSalesProduct = {
         ...updateSalesProduct,
         product_id: product_id,
-        product_variant_id: product_variant_id,
+        product_variant_id: isVariantBased ? product_variant_id : null,
         warehouse_id: warehouse_id
       };
   
@@ -1386,7 +1390,7 @@ exports.receiveSalesProduct = async (req, res) => {
       sales_id: sales_id,
       sales_product_id: sales_product_id,
       product_id: product_id,
-      product_variant_id: product_variant_id,
+      product_variant_id: isVariantBased ? product_variant_id : null,
       warehouse_id: warehouse_id,
       company_id: req.user.company_id,
       received_by: user_id,
@@ -1413,7 +1417,7 @@ exports.receiveSalesProduct = async (req, res) => {
     }
 
     // update the stock entry (increase quantity & decrease sale_order_recieved)
-    await updateStockEntry(sales_id, warehouse_id, product_id, product_variant_id, quantity, 10, user_id, transaction);
+    await updateStockEntry(sales_id, warehouse_id, product_id, isVariantBased ? product_variant_id : null, quantity, 10, user_id, transaction);
 
     // commit the transaction
     await transaction.commit();
@@ -4100,7 +4104,7 @@ exports.ApprovedByManagement = async (req, res) => {
         ));
 
         // Update the stock entry
-        promises.push(updateStockEntry(sale.warehouse_id, product.product_id, product?.product_variant_id, product.product_variant_id, product.qty, 9, user_id, transaction));
+        promises.push(updateStockEntry(sale.id, sale.warehouse_id, product.product_id, product?.product_variant_id, product.product_variant_id, product.qty, 9, user_id, transaction));
       });
     }
 
@@ -4217,6 +4221,7 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
         product_id,
         store_id: warehouse_id,
         user_id: user_id,
+        sales_id: sales_id,
         company_id: stockEntry.company_id,
         product_variant_id: product_variant_id ?? null,
         item_name: stockEntry.product.product_name,
@@ -4227,6 +4232,8 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
         status_in_out: 0,
         reference_number: referenceNumber,
         barcode_number: barcodeNumber,
+        comment: `Sales order ${sales_id} dispatched to customer`,
+        adjustmentType: `Sales order ${sales_id} dispatched to customer`,
       }, { ...(transaction ? { transaction } : {}) });
 
       // Subtract sale order recieved quantity from the stock entry
