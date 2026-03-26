@@ -12,6 +12,14 @@ const TrackProductStock = sequelize.define(
             type: DataTypes.BIGINT,
             allowNull: true,
         },
+        sales_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+        },
+        purchase_id: {
+            type: DataTypes.BIGINT,
+            allowNull: true,
+        },
         product_variant_id: {
             type: DataTypes.BIGINT,
             unsigned: true,
