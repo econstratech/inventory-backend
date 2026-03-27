@@ -493,10 +493,8 @@ exports.GetBmsUserPermissionList = async (req, res) => {
     try {
         // Fetch token from authentication header
         const token = req.headers.authentication;
-        console.log("Token:", token);
         // Decode token
         const decoded = jwt.decode(token);
-        console.log("Decoded token:", decoded);
         // Get user id from decoded token
         const userId = decoded.id;
         // Get user details
