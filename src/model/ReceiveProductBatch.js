@@ -105,11 +105,10 @@ const ReceiveProductBatch = sequelize.define(
             allowNull: false,
             defaultValue: 0
         },
-        receive_or_reject: {
+        returned_quantity: {
             type: DataTypes.INTEGER,
             allowNull: false,
             defaultValue: 0,
-            comment: '0 = receive, 1 = reject',
         },
         deleted_at: {
             type: DataTypes.DATE,

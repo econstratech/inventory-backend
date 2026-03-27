@@ -824,7 +824,7 @@ exports.getPurchase = async (req, res) => {
             },
             { 
               association: 'batches', 
-              attributes: ['id', 'batch_no', 'manufacture_date', 'expiry_date', 'quantity','receive_or_reject'],
+              attributes: ['id', 'batch_no', 'manufacture_date', 'expiry_date', 'quantity','returned_quantity'],
               include: [
                 {
                   association: 'productVariant',
@@ -952,7 +952,7 @@ exports.fetchPurchaseDetails = async (req, res) => {
       include: [
         {
           association: "receivedProducts",
-          attributes: ["id", "product_id", "qty", "available_quantity", "unit_price", "tax", "taxExcl", "taxIncl"],
+          attributes: ["id", "product_id", "qty", "available_quantity", "product_variant_id", "warehouse_id", "received", "returned_quantity", "unit_price", "tax", "taxExcl", "taxIncl"],
           include: [
             {
               association: "product",
@@ -960,7 +960,17 @@ exports.fetchPurchaseDetails = async (req, res) => {
             },
             {
               association: "batches",
-              attributes: ["id", "batch_no", "manufacture_date", "expiry_date", "quantity", "receive_or_reject", "available_quantity"],
+              attributes: ["id", "batch_no", "manufacture_date", "expiry_date", "quantity", "returned_quantity", "available_quantity"],
+            },
+            {
+              association: "productVariant",
+              attributes: ["id", "weight_per_unit", "price_per_unit"],
+              include: [
+                {
+                  association: "masterUOM",
+                  attributes: ["name", "label"],
+                }
+              ]
             }
           ],
         },
@@ -2704,6 +2714,7 @@ exports.AddOrUpdateRecv = async (req, res) => {
               bill_id: purchaseRecieve.id,
               product_id: product.product_id,
               product_variant_id: product?.productVariant?.id || null,
+              warehouse_id: warehouse_id,
               description: product.description,
               qty: received,
               available_quantity: received,
