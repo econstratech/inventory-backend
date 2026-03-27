@@ -168,7 +168,7 @@ exports.CreateCompany = async (req, res) => {
             company_phone, 
             isd, 
             address, 
-            whatsapp_no, 
+            whatsapp_number, 
             w_isd, 
             password, 
             renew_date,
@@ -180,7 +180,7 @@ exports.CreateCompany = async (req, res) => {
         } = req.body;
 
         // validate the request body
-        if (!company_name || !company_email || !company_phone || !isd || !address || !whatsapp_no || !w_isd || !password || !contact_phone) {
+        if (!company_name || !company_email || !company_phone || !isd || !address || !whatsapp_number || !w_isd || !password || !contact_phone) {
             return res.status(400).json({ msg: "Please fill all field" })
         }
         // check if company already exists, if exists then return error
@@ -203,7 +203,7 @@ exports.CreateCompany = async (req, res) => {
             company_phone: company_phone ? company_phone.trim() : null,
             c_p_isd: isd ?? '+91',
             address: address ? address.trim() : null,
-            whatsapp_no: whatsapp_no ?? null,
+            whatsapp_no: whatsapp_number ?? null,
             renew_date: renew_date,
             contact_name: contact_name ? contact_name.trim() : null,
             contact_email: contact_email ? contact_email.trim() : null,

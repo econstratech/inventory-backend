@@ -178,6 +178,7 @@ RecvProduct.hasMany(ReceiveProductBatch, {
 });
 RecvProduct.belongsTo(Product, { foreignKey: 'product_id' ,as:"product"});
 RecvProduct.belongsTo(Purchase, { foreignKey: 'purchase_id' ,as:"purchase"});
+RecvProduct.belongsTo(ProductVariant, { foreignKey: 'product_variant_id', as: 'productVariant' });
 
 Recv.hasMany(ReceiveProductBatch, {
     foreignKey: 'bill_id',

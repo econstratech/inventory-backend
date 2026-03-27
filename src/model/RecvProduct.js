@@ -23,6 +23,10 @@ const RecvProduct = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
+    warehouse_id: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
     description: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -67,7 +71,7 @@ const RecvProduct = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: true,
     },
-    rejected: {
+    returned_quantity: {
       type: DataTypes.INTEGER,
       allowNull: true,
     },
