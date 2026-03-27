@@ -22,7 +22,7 @@
  * /api/company/create-company:
  *   post:
  *     summary: Create a new company with owner user
- *     description: Creates a new company with default office time, notification settings, and general settings. Also creates an owner user and links it to the company.
+ *     description: Creates a new company in a transaction with default office time, notification settings, and general settings, then creates an Owner user linked to that company.
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
@@ -38,9 +38,10 @@
  *               - company_phone
  *               - isd
  *               - address
- *               - whatsapp_no
+ *               - whatsapp_number
  *               - w_isd
  *               - password
+ *               - contact_phone
  *             properties:
  *               company_name:
  *                 type: string
@@ -63,7 +64,7 @@
  *                 type: string
  *                 description: Company address
  *                 example: "123 Main Street, City"
- *               whatsapp_no:
+ *               whatsapp_number:
  *                 type: string
  *                 description: Company WhatsApp number
  *                 example: "9876543210"
@@ -80,32 +81,59 @@
  *                 format: date
  *                 nullable: true
  *                 description: Company renewal date
+ *               owner_name:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Owner user name
+ *                 example: "John Doe"
+ *               owner_email:
+ *                 type: string
+ *                 format: email
+ *                 nullable: true
+ *                 description: Owner user email/username
+ *                 example: "owner@acme.com"
  *               contact_name:
  *                 type: string
- *                 description: Primary contact name (used for owner user)
- *                 example: "John Doe"
+ *                 nullable: true
+ *                 description: Company contact person name
+ *                 example: "Priya Sharma"
  *               contact_email:
  *                 type: string
  *                 format: email
- *                 description: Primary contact email
+ *                 nullable: true
+ *                 description: Company contact email
+ *                 example: "contact@acme.com"
  *               contact_phone:
  *                 type: string
- *                 description: Primary contact phone
+ *                 description: Company contact phone (required by API validation)
+ *                 example: "9898989898"
  *               contact_whatsapp_no:
  *                 type: string
- *                 description: Primary contact WhatsApp number
+ *                 nullable: true
+ *                 description: Contact WhatsApp number
+ *                 example: "9898989898"
  *               is_variant_based:
  *                 type: integer
  *                 enum: [0, 1]
  *                 default: 1
  *                 description: Whether product is variant-based (1) or not (0)
- *               name:
- *                 type: string
- *                 description: Owner user display name (fallback for contact_name)
- *               email:
- *                 type: string
- *                 format: email
- *                 description: Owner user email (fallback for contact_email)
+ *           example:
+ *             company_name: "Acme Corp"
+ *             company_email: "company@acme.com"
+ *             owner_name: "John Doe"
+ *             owner_email: "owner@acme.com"
+ *             company_phone: "9876543210"
+ *             isd: "+91"
+ *             address: "123 Main Street, City"
+ *             whatsapp_number: "9876543210"
+ *             w_isd: "+91"
+ *             password: "Password@123"
+ *             renew_date: "2026-12-31"
+ *             contact_name: "Priya Sharma"
+ *             contact_email: "contact@acme.com"
+ *             contact_phone: "9898989898"
+ *             contact_whatsapp_no: "9898989898"
+ *             is_variant_based: 1
  *     responses:
  *       200:
  *         description: Company created successfully
@@ -117,9 +145,12 @@
  *                 success:
  *                   type: boolean
  *                   example: true
- *                 msg:
+ *                 message:
  *                   type: string
  *                   example: "New company has been created"
+ *                 data:
+ *                   type: object
+ *                   description: Newly created company object
  *       400:
  *         description: Validation error or company already exists
  *         content:
@@ -135,7 +166,9 @@
  *                   example: "Please fill all field"
  *                 message:
  *                   type: string
- *                   example: "This company name already exist !"
+ *                   example: "Error while creating company"
+ *                 error:
+ *                   type: object
  */
 
 /**
