@@ -489,6 +489,39 @@ exports.ValidateUser = async (req, res) => {
     }
 };
 
+exports.GetBmsUserPermissionList = async (req, res) => {
+    try {
+        // Fetch token from authentication header
+        const token = req.headers.authentication;
+        // Decode token
+        const decoded = jwt.decode(token);
+        // Get user id from decoded token
+        const userId = decoded.id;
+        // Get user details
+        const user = await User.findOne({
+            attributes: ['id', 'name', 'email', 'company_id', 'position', 'role'],
+            where: {
+                id: userId,
+                status: 1
+            },
+            raw: true,
+        });
+        // throw error if user not found
+        if (!user) {
+            return res.status(400).json({
+                status: false,
+                message: "User not found"
+            });
+        }
+        // Get user permission list
+        const permissionsList = await getUserPermissionList(user);
+        return res.status(200).json({ status: true, message: "User permission list", data: permissionsList });
+    } catch (error) {
+        console.log("BMS Authentication Error:", error);
+        return res.status(400).json({ status: false, message: "Error getting user permission list", error: error.message });
+    }
+}
+
 /**
  * Validate third-party user token
  * @param {object} req - The request object
