@@ -6,6 +6,7 @@ const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 const { uploadDir } = require("../utils/handlersbluk");
+const CommonHelper = require("../helpers/commonHelper");
 
 
 exports.UploadCategory = async (req, res) => {
@@ -99,56 +100,95 @@ exports.CreateProductCategory = async (req, res) => {
 
 exports.UpdateProductCat = async (req, res) => {
     try {
-      const productId = req.params.id;
+      const productCategoryId = req.params.id;
       const { title, status } = req.body;
       // Check if the category already exists
       const existingCategory = await ProductCategory.findOne({
         attributes: ['id'],
-        where: { title: title, company_id: req.user.company_id },
+        where: { id: productCategoryId },
         raw: true,
       });
-      if (existingCategory) {
-        return res.status(400).json({ status: false, message: "Product category with this name already exists" });
+      // If category is not found, then throw 404 error
+      if (!existingCategory) {
+        return res.status(404).json({ 
+          status: false, 
+          message: "Product category is not found" 
+        });
       }
       // Update the category
       await ProductCategory.update(
-          {  
-            title: title,
-            status: status,
-          },
-          { where: { id: productId } }
-        );
+        {  
+          ...(title &&  { title: title.trim() }),
+          status: status,
+        },
+        { where: { id: productCategoryId } }
+      );
 
       // Return success response
-      return res.status(200).json({ status: true, message: "Record Updated" });
+      return res.status(200).json({ 
+        status: true, 
+        message: "Product category has been updated successfully" 
+      });
     } catch (err) {
-        console.error("Error updating product category:", err);
-        return res.status(400).json({ status: false, message: "Unable to update product category", error: err.message });
+      console.error("Error updating product category:", err);
+      return res.status(400).json({ 
+        status: false,
+        message: "Unable to update product category", 
+        error: err.message 
+      });
     }
 
 }
 
+/**
+ * Get list of all categories of a particular company
+ */
 exports.GetAllProductCategories = async (req, res) => {
-    try {
-        const productCategories = await ProductCategory.findAll({
-          attributes: ['id', 'title', 'status', 'created_at', 'updated_at'],
-          raw: true,
-            where: {
-              user_id: req.user.id,
-              company_id: req.user.company_id,
-                status: {
-                    [Op.ne]: 2
-                }
-            }, order: [
-                ['title', 'ASC']
-            ]
-        })
-        return res.status(200).json({ status: true, message: "Success", data: productCategories });
+  try {
+    // pagination params
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
 
-    } catch (err) {
-        console.error("Error fetching product categories:", err);
-        return res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+    // base where
+    const where = { company_id: req.user.company_id };
+
+    // if searchkey is provided then add it to the where clause
+    if (req.query.title) {
+        where.title = { [Op.like]: `%${req.query.title.trim()}%` };
     }
+    // if status is provided then add it to the where clause
+    if (req.query.status) {
+        where.status = req.query.status;
+    } else {
+      where.status = { [Op.ne]: 2 }
+    }
+
+    // Query to get all active & inactive categories
+    const productCategories = await ProductCategory.findAndCountAll({
+      attributes: ['id', 'title', 'status', 'created_at', 'updated_at'],
+      distinct: true,
+      raw: true,
+      limit,
+      offset,
+      where,
+      order: [['title', 'ASC']]
+    });
+
+    // Get paginated data
+    const paginatedProductCategoryData = CommonHelper.paginate(productCategories, page, limit);
+
+    // return response
+    return res.status(200).json({
+      status: true,
+      message: "Product Categories fetched successfully",
+      data: paginatedProductCategoryData
+    });
+
+  } catch (err) {
+    console.error("Error fetching product categories:", err);
+    return res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
+  }
 }
 
 exports.GetAllProductscatupdate = async (req, res) => {

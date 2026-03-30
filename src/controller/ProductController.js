@@ -1394,16 +1394,12 @@ const transferProduct = async (params) => {
       }
 
       if (transfer_type === 'purchase_order_return') {
-        console.log("product", product);
-        console.log("purchaseOrder", purchaseOrder);
         // Reduce the quantity of the receive product from the receive product
         await RecvProduct.update({
           returned_quantity: product.returned_quantity + product.transferred_quantity,
         }, {
-          where: { 
-            product_id: product.id,
-            purchase_id: purchaseOrder.id,
-            ...(product.product_variant_id ? { product_variant_id: product.product_variant_id } : {}),
+          where: {
+            id: product.id
           }, transaction 
         });
       }
