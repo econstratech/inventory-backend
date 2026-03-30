@@ -170,7 +170,7 @@ exports.uploadProducts = async (req, res) => {
     }
 
     const companyId = req.user.company_id;
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based;
     const buffer = req.file.buffer;
     const fileExtension = path.extname(req.file.originalname).toLowerCase();
 
@@ -400,7 +400,7 @@ exports.AddProduct = async (req, res) => {
     // Set company ID
     const companyId = req.user.company_id;
     // Check if company is set to variant based
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based;
     // Generate product SKU
     const productSKU = await generateUniqueProductSKU(companyId);
 
@@ -646,7 +646,7 @@ exports.GetAllProducts = async (req, res) => {
   try {
     const company_id = req.user.company_id;
     const { type } = req.query;
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based;
 
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 10;
@@ -765,6 +765,7 @@ exports.GetAllProducts = async (req, res) => {
         "markup_percentage",
       ],
       where,
+      ...(searchkey && { subQuery: false }),
       include,
       order: [["id", "DESC"]],
       limit,
@@ -2440,7 +2441,8 @@ exports.AddToStock = async (req, res) => {
     const seen = new Set();
     const duplicates = [];
     const validationErrors = [];
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based;
+
 
     for (let i = 0; i < stockEntries.length; i++) {
       const entry = stockEntries[i];
@@ -2500,6 +2502,8 @@ exports.AddToStock = async (req, res) => {
       warehouse_id: e.warehouse_id,
       ...(isVariantBased ? { product_variant_id: e.product_variant_id } : {}),
     }));
+
+    console.log("productWarehousePairs", productWarehousePairs);
 
 
     const existingStockRows = await ProductStockEntry.findAll({
@@ -2654,7 +2658,7 @@ exports.BulkAddToStock = async (req, res) => {
        STEP 1: Aggregate (product_code + store_name + uom + weight_per_unit)
        ----------------------------------------------------- */
 
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based;
     const aggregated = new Map();
 
     for (const row of rows) {

@@ -287,6 +287,10 @@ MasterBOM.belongsTo(Product, {
     foreignKey: 'raw_material_product_id',
     as: 'rawMaterialProduct'
 });
+MasterBOM.belongsTo(ProductVariant, {
+    foreignKey: 'raw_material_variant_id',
+    as: 'rawMaterialProductVariant'
+});
 
 // TrackBatchProductLog associations
 TrackBatchProductLog.belongsTo(ReceiveProductBatch, {
