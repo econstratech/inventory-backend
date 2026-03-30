@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
-const { MasterBOM, Product, ProductStockEntry } = require('../model');
+const { MasterBOM, Product, ProductStockEntry, MasterUOM } = require('../model');
 const { Op, QueryTypes } = require('sequelize');
 const sequelize = require('../database/db-connection');
 const CommonHelper = require('../helpers/commonHelper');
@@ -44,13 +44,20 @@ const generateUniqueBOMNumber = async () => {
 const validateBOMItem = (user, bomItem) => {
     return new Promise(async (resolve, reject) => {
         try {
-            const { final_product_id, raw_material_product_id, quantity } = bomItem;
+            const { 
+                final_product_id, 
+                raw_material_product_id,
+                raw_material_variant_id,
+                quantity 
+            } = bomItem;
+
+            const isVariantBased = user.is_variant_based; 
         
             // Validate required fields
-            if (!final_product_id || !raw_material_product_id || quantity === undefined || quantity === null) {
+            if (!final_product_id || !raw_material_product_id || (!raw_material_variant_id && isVariantBased) || quantity === undefined || quantity === null) {
                 return res.status(400).json({
                     status: false,
-                    message: "final_product_id, raw_material_product_id, and quantity are required"
+                    message: `Please fill all required fields`
                 });
             }
     
@@ -103,7 +110,8 @@ const validateBOMItem = (user, bomItem) => {
  * @param {object} req - The request object
  * @param {object} req.body - The request body
  * @param {number} req.body.final_product_id - Final product ID
- * @param {number} req.body.raw_material_product_id - Raw material product ID
+ * @param {number} req.body.raw_material_variant_id - Raw material product ID
+ * @param {number} req.body.raw_material_product_id - Raw material product variant ID
  * @param {number} req.body.quantity - Quantity required
  * @param {object} req.user - Authenticated user object
  * @param {number} req.user.company_id - Company ID from authenticated user
@@ -130,6 +138,7 @@ exports.AddBOM = async (req, res) => {
                 company_id: req.user.company_id,
                 final_product_id: bomItem.final_product_id,
                 raw_material_product_id: bomItem.raw_material_product_id,
+                raw_material_variant_id: bomItem.raw_material_variant_id || null,
                 bom_no: bomNo,
                 quantity: bomItem.quantity
             })
@@ -190,6 +199,8 @@ exports.BulkUploadBOM = async (req, res) => {
         }
 
         const company_id = req.user.company_id;
+        const isVariantBased = req.user.is_variant_based;
+
         filePath = path.join(uploadDir, req.file.filename);
 
         if (path.extname(req.file.filename).toLowerCase() !== '.csv') {
@@ -205,17 +216,24 @@ exports.BulkUploadBOM = async (req, res) => {
 
         const parsed = [];
         const allProductCodes = new Set();
+        const allUOMs = new Set();
 
         for (const row of rows) {
             const fg = row["Final Product Code"]?.trim();
             const rm = row["Raw Material Product Code"]?.trim();
             const qty = parseInt(row["Quantity"], 10);
+            const rm_variant = row["RM Variant"]?.trim();
 
-            if (!fg || !rm || isNaN(qty) || qty < 1) continue;
+            // For variant based company, RM variant is required
+            if (!fg || !rm || isNaN(qty) || qty < 1 || (!rm_variant && isVariantBased)) continue;
 
-            parsed.push({ fg, rm, qty, _row: row });
+            const rm_variant_arr = rm_variant.split(' ');
+            const rm_uom_label = rm_variant_arr[1];
+
+            parsed.push({ fg, rm, qty, rm_variant, _row: row });
             allProductCodes.add(fg);
             allProductCodes.add(rm);
+            allUOMs.add(rm_uom_label);
         }
 
         if (!parsed.length) {
@@ -232,10 +250,23 @@ exports.BulkUploadBOM = async (req, res) => {
             attributes: ['id', 'product_code'],
             raw: true,
         });
+        let rmUOMs = [];
+        if (isVariantBased) {
+            rmUOMs = await MasterUOM.findAll({
+                where: { label: [...allUOMs], is_active: 1 },
+                attributes: ['id', 'label'],
+                raw: true,
+            });
+        }
 
         const productMap = {};
+        const variantsMap = {};
         products.forEach(p => {
             productMap[p.product_code] = p.id;
+        });
+
+        rmUOMs.forEach(v => {
+            variantsMap[v.label] = v.id;
         });
 
         const validRecords = [];
@@ -244,14 +275,18 @@ exports.BulkUploadBOM = async (req, res) => {
         for (const item of parsed) {
             const fgId = productMap[item.fg];
             const rmId = productMap[item.rm];
+            const rm_variant = item.rm_variant ? item.rm_variant.split(' ') : [];
+
+            const variantId = rm_variant.length > 0 ? variantsMap[rm_variant[1]] : null;
 
             if (!fgId) {
-                errors.push({ row: item._row, reason: `Final product not found: ${item.fg}` });
+                errors.push({ row: item._row, reason: `Final product is not found: ${item.fg}` });
                 continue;
-            }
-
-            if (!rmId) {
-                errors.push({ row: item._row, reason: `Raw material not found: ${item.rm}` });
+            } else if (!rmId) {
+                errors.push({ row: item._row, reason: `Raw material is not found: ${item.rm}` });
+                continue;
+            } else if (!variantId && isVariantBased) {
+                errors.push({ row: item._row, reason: `Raw material variant is not found: ${item.rm}` });
                 continue;
             }
 
@@ -259,6 +294,7 @@ exports.BulkUploadBOM = async (req, res) => {
                 company_id,
                 final_product_id: fgId,
                 raw_material_product_id: rmId,
+                raw_material_variant_id: variantId,
                 quantity: item.qty
             });
         }
@@ -283,6 +319,7 @@ exports.BulkUploadBOM = async (req, res) => {
         });
 
     } catch (error) {
+        console.log("Bulk BOM insert:", error);
         await transaction.rollback();
         if (filePath && fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -436,6 +473,17 @@ exports.GetAllBOM = async (req, res) => {
                     association: 'rawMaterialProduct',
                     attributes: ['id', 'product_name', 'product_code', 'sku_product']
                 },
+                {
+                    association: 'rawMaterialProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    where: { status: 1 },
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label']
+                        }
+                    ]
+                }
             ]
         });
 
