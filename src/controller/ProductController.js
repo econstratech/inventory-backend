@@ -172,7 +172,11 @@ function productVatientInsert(isProductExist, uomId, weightPerUnit, user, transa
  * @returns 
  */
 async function findBrandByName(brandName, companyId) {
-  const brand = await MasterBrand.findOne({ where: { name: brandName, company_id: companyId } });
+  const brand = await MasterBrand.findOne({
+    attributes: ['id', 'name', 'description'],
+    where: { name: { [Op.like]: `%${brandName}%` }, company_id: companyId },
+    raw: true,
+  });
   return brand ? brand.id : null;
 }
 
