@@ -89,13 +89,121 @@
  * @swagger
  * /api/product-category:
  *   get:
- *     summary: Get all product categories
+ *     summary: Get product categories (paginated)
+ *     description: Returns active/inactive product categories for the authenticated user's company with pagination, optional title search (`searchkey`), and optional status filter. By default, status `2` (deleted) is excluded.
  *     tags: [Product Category]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *           minimum: 1
+ *         description: Page number
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           minimum: 1
+ *         description: Number of records per page
+ *         example: 10
+ *       - in: query
+ *         name: searchkey
+ *         schema:
+ *           type: string
+ *         description: Optional title search (partial match)
+ *         example: "Raw"
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: integer
+ *         description: Optional exact status filter (if omitted, status != 2)
+ *         example: 1
  *     responses:
  *       200:
- *         description: List of categories
+ *         description: Product Categories fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Product Categories fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                           example: 26
+ *                         total_pages:
+ *                           type: integer
+ *                           example: 3
+ *                         current_page:
+ *                           type: integer
+ *                           example: 1
+ *                         per_page:
+ *                           type: integer
+ *                           example: 10
+ *                         has_next_page:
+ *                           type: boolean
+ *                           example: true
+ *                         has_prev_page:
+ *                           type: boolean
+ *                           example: false
+ *                         next_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: 2
+ *                         prev_page:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: null
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 12
+ *                           title:
+ *                             type: string
+ *                             example: "Raw Materials"
+ *                           status:
+ *                             type: integer
+ *                             example: 1
+ *                           created_at:
+ *                             type: string
+ *                             format: date-time
+ *                           updated_at:
+ *                             type: string
+ *                             format: date-time
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ *                 error:
+ *                   type: string
  */
 
 /**
