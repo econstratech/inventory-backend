@@ -27,6 +27,7 @@ const {
   Sale,
   Purchase,
   MasterUOM,
+  MasterBrand,
   SalesProductReceived,
 } = require("../model");
 // const { CompressImage } = require("../utils/ImageUpload");
@@ -88,6 +89,7 @@ const UPLOAD_FIXED_HEADERS = {
   ITEM_NAME: 'Item Name',
   ITEM_TYPE: 'Item Type',
   CATEGORY: 'Category',
+  BRAND: 'Brand',
   UOM: 'UOM',
   WEIGHT_PER_UNIT: 'Weight',
   BATCH_APPLICABLE: 'Batch Applicable',
@@ -163,6 +165,33 @@ function productVatientInsert(isProductExist, uomId, weightPerUnit, user, transa
   });
 }
 
+/**
+ * Find brand by name
+ * @param {*} brandName 
+ * @param {*} companyId 
+ * @returns 
+ */
+async function findBrandByName(brandName, companyId) {
+  const brand = await MasterBrand.findOne({
+    attributes: ['id', 'name', 'description'],
+    where: { name: { [Op.like]: `%${brandName}%` }, company_id: companyId },
+    raw: true,
+  });
+  return brand ? brand.id : null;
+}
+
+/**
+ * Insert brand
+ * @param {*} brandName 
+ * @param {*} userId 
+ * @param {*} companyId 
+ * @returns 
+ */
+async function insertBrand(brandName, userId, companyId) {
+  const brand = await MasterBrand.create({ name: brandName, user_id: userId, company_id: companyId });
+  return brand.id ? brand.id : null;
+}
+
 exports.uploadProducts = async (req, res) => {
   try {
     if (!req.file) {
@@ -222,6 +251,7 @@ exports.uploadProducts = async (req, res) => {
         const itemName = row[UPLOAD_FIXED_HEADERS.ITEM_NAME] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_NAME]).trim() : '';
         const itemType = row[UPLOAD_FIXED_HEADERS.ITEM_TYPE] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_TYPE]).trim() : '';
         const categoryName = row[UPLOAD_FIXED_HEADERS.CATEGORY] != null ? String(row[UPLOAD_FIXED_HEADERS.CATEGORY]).trim() : '';
+        const brandName = row[UPLOAD_FIXED_HEADERS.BRAND] != null ? String(row[UPLOAD_FIXED_HEADERS.BRAND]).trim() : '';
         const uomName = row[UPLOAD_FIXED_HEADERS.UOM] != null ? String(row[UPLOAD_FIXED_HEADERS.UOM]).trim() : '';
 
         const weightPerUnit = row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT] != null ? parseInt(row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT]) : 0;
@@ -254,10 +284,17 @@ exports.uploadProducts = async (req, res) => {
         }
 
         let productCategoryId = null;
+        let brandId = null;
         if (categoryName) {
           productCategoryId = await findCategoryByName(categoryName, companyId);
           if (!productCategoryId) {
             productCategoryId = await insertCategory(categoryName, req.user.id, companyId);
+          }
+        }
+        if (brandName) {
+          brandId = await findBrandByName(brandName, companyId);
+          if (!brandId) {
+            brandId = await insertBrand(brandName, req.user.id, companyId);
           }
         }
 
@@ -273,6 +310,7 @@ exports.uploadProducts = async (req, res) => {
           product_name: itemName,
           product_type_id: productTypeId,
           product_category_id: productCategoryId,
+          brand_id: brandId,
           ...(!isVariantBased ? { uom_id: uomId } : {}),
           // uom_id: uomId,
           // buffer_size: null,
