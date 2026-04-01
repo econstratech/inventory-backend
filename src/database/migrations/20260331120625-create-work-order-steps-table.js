@@ -15,27 +15,26 @@ exports.setup = function(options, seedLink) {
 };
 
 exports.up = function(db) {
-  return db.createTable('company_production_flows', {
-    id: { type: 'int', primaryKey: true, autoIncrement: true },
-    company_id: { 
+  return db.createTable('work_order_steps', {
+    id: { type: 'bigint', primaryKey: true, autoIncrement: true },
+    wo_id: { 
       type: 'bigint', 
-      unsigned: true, 
       notNull: true,
       foreignKey: {
-        name: 'fk_cpf_company_id',
-        table: 'companies',
+        name: 'fk_work_order_steps_wo',
+        table: 'work_orders',
         rules: {
           onDelete: 'CASCADE',
           onUpdate: 'RESTRICT'
         },
         mapping: 'id'
       },
-     },
+    },
     step_id: { 
       type: 'int', 
       notNull: true,
       foreignKey: {
-        name: 'fk_cpf_step_id',
+        name: 'fk_work_order_steps_step',
         table: 'production_steps_master',
         rules: {
           onDelete: 'CASCADE',
@@ -44,16 +43,19 @@ exports.up = function(db) {
         mapping: 'id'
       },
     },
-    sequence: {
-      type: 'int',
-      notNull: true,
-      defaultValue: 1
-    },
+    sequence: { type: 'int', notNull: true },
+    input_qty: { type: 'int', notNull: false },
+    output_qty: { type: 'int', notNull: false },
+    waste_qty: { type: 'int', notNull: false },
+    yield_percent: { type: 'int', notNull: false },
+    created_at: { type: 'datetime', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },
+    updated_at: { type: 'datetime', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },
+    deleted_at: { type: 'datetime', notNull: false },
   });
 };
 
 exports.down = function(db) {
-  return db.dropTable('company_production_flows');
+  return db.dropTable('work_order_steps');
 };
 
 exports._meta = {

@@ -11,7 +11,8 @@ const {
     CreateMasterBrand,
     GetActiveMasterBrand,
     UpdateMasterBrand,
-    DeleteMasterBrand
+    DeleteMasterBrand,
+    GetProductionSteps
 } = require("../controller/MasterController");
 const { authToken } = require("../utils/Middleware");
 
@@ -49,5 +50,8 @@ router.get('/brand/list', authToken, GetActiveMasterBrand);
 router.put('/brand/:id', authToken, UpdateMasterBrand);
 // Delete master brand by id
 router.delete('/brand/:id', authToken, DeleteMasterBrand);
+
+// Get all production steps
+router.get('/production-steps', authToken, GetProductionSteps);
 
 module.exports = router;

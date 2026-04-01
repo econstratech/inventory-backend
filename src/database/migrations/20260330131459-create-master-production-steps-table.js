@@ -31,8 +31,11 @@ exports.up = function(db) {
       VALUES
       ('Printing', 'Printing process on material', 1, NOW(), NOW()),
       ('Lamination', 'Lamination process', 1, NOW(), NOW()),
+      ('Extrusion Coating', 'Extrusion coating process', 1, NOW(), NOW()),
+      ('Slitting', 'Slitting process', 1, NOW(), NOW()),
       ('Quality Testing', 'Quality inspection process', 1, NOW(), NOW()),
       ('Cutting', 'Cutting into final size', 1, NOW(), NOW()),
+      ('Metallization', 'Metallization process', 1, NOW(), NOW()),
       ('Packing', 'Final packing process', 1, NOW(), NOW());
     `);
   })

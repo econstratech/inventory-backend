@@ -43,6 +43,10 @@ const StockTransferBatch = require('./StockTransferBatch');
 const { GeneralSettings } = require('./CompanyModel');
 const ProductVariant = require('./ProductVariant');
 const ServiceAuditLog = require('./ServiceAuditLog');
+const ProductionStepsMaster = require('./ProductionStepsMaster');
+const CompanyProductionFlow = require('./CompanyProductionFlow');
+const WorkOrder = require('./WorkOrder');
+const WorkOrderStep = require('./WorkOrderStep');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -359,6 +363,18 @@ Permission.hasMany(RolePermission, { foreignKey: 'permission_id', as: 'rolePermi
 Module.hasMany(RolePermission, { foreignKey: 'module_id', as: 'rolePermissions' });
 Module.hasMany(Permission, { foreignKey: 'module_id', as: 'permissions' });
 
+// Production module associations
+ProductionStepsMaster.hasMany(CompanyProductionFlow, { foreignKey: 'step_id', as: 'companyProductionFlows' });
+CompanyProductionFlow.belongsTo(ProductionStepsMaster, { foreignKey: 'step_id', as: 'step' });
+
+WorkOrder.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+WorkOrder.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+WorkOrder.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+WorkOrder.belongsTo(ProductionStepsMaster, { foreignKey: 'production_step_id', as: 'productionStep' });
+WorkOrder.hasMany(WorkOrderStep, { foreignKey: 'wo_id', as: 'workOrderSteps' });
+WorkOrderStep.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
+WorkOrderStep.belongsTo(ProductionStepsMaster, { foreignKey: 'step_id', as: 'step' });
+
 module.exports = {
     Module,
     Role,
@@ -401,4 +417,8 @@ module.exports = {
     ProductVariant,
     ServiceAuditLog,
     RolePermission,
+    ProductionStepsMaster,
+    CompanyProductionFlow,
+    WorkOrder,
+    WorkOrderStep,
 };

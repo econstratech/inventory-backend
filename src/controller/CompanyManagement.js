@@ -5,7 +5,7 @@ const bcrypt = require('bcrypt');
 
 
 const sequelize = require("../database/db-connection");
-const { GeneralSettings, Company, User } = require("../model")
+const { GeneralSettings, Company, User, CompanyProductionFlow } = require("../model")
 const OfficeTimeModel = require("../model/OfficeTimeModel")
 const NotificationSettingModel = require("../model/NotificationSettingModel")
 const CommonHelper = require("../helpers/commonHelper")
@@ -335,6 +335,82 @@ exports.UserListCompanyWise = async (req, res) => {
         });
         return res.status(200).json({ success: true, data: user })
     } catch (err) {
+        return res.status(400).json({ success: false, message: err })
+    }
+}
+
+/**
+ * Create company production flow
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.CreateCompanyProductionFlow = async (req, res) => {
+    try {
+        const { company_id, steps } = req.body;
+
+        // validate the request body
+        if (!company_id || steps.length === 0) {
+            return res.status(400).json({ success: false, message: "Please fill all field !" })
+        }
+
+        // delete the existing company production flow if exists
+        await CompanyProductionFlow.destroy({
+            where: { company_id: company_id }
+        });
+        // create the company production flow
+        const flowSteps = [];
+        for (const step of steps) {
+            flowSteps.push({
+                company_id: company_id,
+                step_id: step.id,
+                sequence: step.sequence,
+            });
+        }
+        // bulk create the company production flow
+        await CompanyProductionFlow.bulkCreate(flowSteps);
+        // return the success response
+        return res.status(200).json({ 
+            success: true, 
+            message: "Company production flow has been created successfully" 
+        })
+    } catch (err) {
+        console.log("Error while creating company production flow:", err);
+        return res.status(400).json({ success: false, message: err })
+    }
+}
+
+/**
+ * Get company production flow
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.GetCompanyProductionFlow = async (req, res) => {
+    try {
+        const { id } = req.params;
+        // validate the request body
+        if (!id) {
+            return res.status(400).json({ success: false, message: "Company ID is required !" })
+        }
+        // get the company production flow
+        const companyProductionFlow = await CompanyProductionFlow.findAll({
+            attributes: ['id', 'step_id', 'sequence'],
+            where: { company_id: id },
+            order: [['sequence', 'ASC']],
+            raw: true,
+            nest: true,
+            include: [
+                {
+                    association: 'step',
+                    attributes: ['id', 'name'],
+                }
+            ]
+        });
+        // return the success response
+        return res.status(200).json({ success: true, data: companyProductionFlow })
+    } catch (err) {
+        console.log("Error while getting company production flow:", err);
         return res.status(400).json({ success: false, message: err })
     }
 }
