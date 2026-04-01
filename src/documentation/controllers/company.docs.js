@@ -254,3 +254,148 @@
  *       200:
  *         description: User created successfully
  */
+
+/**
+ * @swagger
+ * /api/company/create-company-production-flow:
+ *   post:
+ *     summary: Create or replace company production flow
+ *     description: Replaces existing production flow for a company by deleting old flow rows and bulk-inserting the provided ordered steps.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - company_id
+ *               - steps
+ *             properties:
+ *               company_id:
+ *                 type: integer
+ *                 description: Target company ID
+ *                 example: 39
+ *               steps:
+ *                 type: array
+ *                 minItems: 1
+ *                 description: Ordered production steps to assign
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - id
+ *                     - sequence
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       description: Production step master ID
+ *                       example: 1
+ *                     sequence:
+ *                       type: integer
+ *                       description: Sequence/order for this step
+ *                       example: 10
+ *           example:
+ *             company_id: 39
+ *             steps:
+ *               - id: 1
+ *                 sequence: 10
+ *               - id: 2
+ *                 sequence: 20
+ *               - id: 3
+ *                 sequence: 30
+ *     responses:
+ *       200:
+ *         description: Company production flow created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Company production flow has been created successfully"
+ *       400:
+ *         description: Validation error or server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   description: Validation message or error object
+ *                   example: "Please fill all field !"
+ */
+
+/**
+ * @swagger
+ * /api/company/get-company-production-flow/{id}:
+ *   get:
+ *     summary: Get company production flow
+ *     description: Returns production flow rows for the given company ordered by sequence ascending.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Company ID
+ *         example: 39
+ *     responses:
+ *       200:
+ *         description: Company production flow fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 5
+ *                       step_id:
+ *                         type: integer
+ *                         example: 1
+ *                       sequence:
+ *                         type: integer
+ *                         example: 1
+ *                       step:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 1
+ *                           name:
+ *                             type: string
+ *                             example: "Printing"
+ *       400:
+ *         description: Company ID missing or server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   description: Validation message or error object
+ *                   example: "Company ID is required !"
+ */

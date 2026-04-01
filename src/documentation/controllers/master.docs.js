@@ -853,3 +853,58 @@
  *                   type: string
  *                   example: "Error details"
  */
+
+/**
+ * @swagger
+ * /api/master/production-steps:
+ *   get:
+ *     summary: Get all active production steps
+ *     description: Returns active records from production steps master ordered by ID ascending.
+ *     tags: [Master]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Production steps fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production steps fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 1
+ *                       name:
+ *                         type: string
+ *                         example: "Cutting"
+ *                       description:
+ *                         type: string
+ *                         nullable: true
+ *                         example: "Cut raw material as per BOM dimensions"
+ *                       is_active:
+ *                         type: integer
+ *                         example: 1
+ *       400:
+ *         description: Error while getting production steps
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   description: Error object/message returned by the controller
+ */

@@ -4,7 +4,8 @@ const {
     MasterProductType, 
     ProductAttribute, 
     ProductCategory,
-    MasterBrand
+    MasterBrand,
+    ProductionStepsMaster
 } = require('../model');
 const CommonHelper = require("../helpers/commonHelper");
 
@@ -545,5 +546,33 @@ exports.DeleteMasterBrand = async (req, res) => {
             message: "Error deleting Master Brand",
             error: error.message
         });
+    }
+}
+
+/**
+ * Get all production steps
+ * @param {Object} req - request object
+ * @param {Object} res - response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.GetProductionSteps = async (req, res) => {
+    try {
+        // get all production steps
+        const productionSteps = await ProductionStepsMaster.findAll({
+            where: { is_active: 1 },
+            attributes: ['id', 'name', 'description', 'is_active'],
+            order: [['id', 'ASC']],
+            raw: true
+        });
+
+        // return success response
+        return res.status(200).json({
+            status: true,
+            message: 'Production steps fetched successfully',
+            data: productionSteps
+        });
+    } catch (error) {
+        console.log("Error while getting production steps:", error);
+        return res.status(400).json({ status: false, message: error })
     }
 }
