@@ -168,7 +168,7 @@ exports.GetAllWorkOrders = async (req, res) => {
                 },
                 {
                     association: 'workOrderSteps',
-                    attributes: ['id', 'step_id', 'sequence', 'input_qty', 'output_qty', 'waste_qty', 'yield_percent'],
+                    attributes: ['id', 'step_id', 'status', 'sequence', 'input_qty', 'output_qty', 'waste_qty', 'yield_percent'],
                     include: [
                         {
                             association: 'step',
@@ -446,5 +446,101 @@ exports.CompleteMaterialIssue = async (req, res) => {
         // rollback the transaction
         await transaction.rollback();
         return res.status(400).json({ status: false, message: "Error completing material issue", error: error.message });
+    }
+}
+
+/**
+ * Save production data for a work order
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.SaveProductionData = async (req, res) => {
+    try {
+        // validate the input and output quantities
+        const { wo_id, wo_step_id, input_qty, output_qty, status } = req.body;
+        if (!input_qty || !output_qty) {
+            return res.status(400).json({ status: false, message: "Input quantity and output quantity are required" });
+        } else if (input_qty < 0 || output_qty < 0) {
+            return res.status(400).json({ status: false, message: "Input quantity and output quantity cannot be negative" });
+        } else if (output_qty > input_qty) {
+            return res.status(400).json({ status: false, message: "Output quantity cannot be greater than input quantity" });
+        }
+
+        // check if the work order is exist, if not then return 404
+        const workOrder = await WorkOrder.findOne({
+            attributes: ['id', 'production_step_id'],
+            raw: true,
+            where: { id: wo_id },
+        });
+        if (!workOrder) {
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        }
+
+        // get current step if exists, if not then return 404
+        const currentStep = await WorkOrderStep.findOne({
+            attributes: ['id', 'step_id', 'sequence'],
+            raw: true,
+            where: { id: wo_step_id },
+        });
+        if (!currentStep) {
+            return res.status(404).json({ status: false, message: "Work order step not found" });
+        }
+
+        // get the next step
+        const nextStep = await WorkOrderStep.findOne({
+            attributes: ['id', 'step_id'],
+            raw: true,
+            where: { wo_id: wo_id, sequence: { [Op.gt]: currentStep.sequence } },
+            order: [['sequence', 'ASC']],
+        });
+
+        // calculate the waste quantity and yield percentage
+        const waste_qty = input_qty - output_qty;
+        const yield_percent = (output_qty / input_qty) * 100;
+
+        let stepStatus = status;
+        if (status === 1) {
+            stepStatus = 2; // Force to In-Progress status, if status is 1
+        }
+
+        // update the work order step
+        await WorkOrderStep.update({
+            input_qty: input_qty,
+            output_qty: output_qty,
+            waste_qty: waste_qty,
+            yield_percent: yield_percent,
+            status: stepStatus,
+        }, {
+            where: { id: wo_step_id },
+        });
+
+        // calculate the progress percentage
+        const [totalSteps, totalStepsCompleted] = await Promise.all([
+            WorkOrderStep.count({
+                where: { wo_id: wo_id },
+            }),
+            WorkOrderStep.count({
+                where: { wo_id: wo_id, status: 3 },
+            }),
+        ]);
+
+        // calculate the progress percentage
+        const progress_percent = (totalStepsCompleted / totalSteps) * 100;
+
+        // update the work order progress percentage
+        await WorkOrder.update({
+            progress_percent: progress_percent,
+            ...(nextStep && status === 3 ? { production_step_id: nextStep.step_id } : {}),
+            status: progress_percent === 100 ? 4 : 3, // 4: Completed, 3: Material Issued (production is in progress)
+        }, {
+            where: { id: wo_id },
+        });
+
+        // return success response
+        return res.status(200).json({ status: true, message: "Production data saved successfully" });
+    } catch (error) {
+        console.error("Error saving production data:", error);
+        return res.status(400).json({ status: false, message: "Error saving production data", error: error.message });
     }
 }
