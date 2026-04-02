@@ -5,7 +5,8 @@ const {
     DeleteWorkOrder,
     GetBOMListForWorkOrder,
     CreateMaterialIssue,
-    CompleteMaterialIssue
+    CompleteMaterialIssue,
+    SaveProductionData
 } = require("../controller/ProductionController");
 const { authToken } = require("../utils/Middleware");
 // const uploadsproduction  = require("../utils/uploads.production");
@@ -20,6 +21,7 @@ router.delete('/work-order/delete/:id', authToken, DeleteWorkOrder);
 router.get('/work-order/bom-list/:wo_id', authToken, GetBOMListForWorkOrder);
 router.post('/work-order/material-issue', authToken, CreateMaterialIssue);
 router.post('/work-order/material-issue-complete', authToken, CompleteMaterialIssue);
+router.post('/work-order/save-production-data', authToken, SaveProductionData);
 
 
 module.exports = router;

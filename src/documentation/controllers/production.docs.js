@@ -628,3 +628,143 @@
  *                 error:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/production/work-order/material-issue-complete:
+ *   post:
+ *     summary: Mark material issue as completed for a work order
+ *     description: |
+ *       Updates the work order to material-issued state (`status = 3`) and stores the authenticated user in `material_issued_by` with current timestamp in `material_issued_at`.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wo_id
+ *             properties:
+ *               wo_id:
+ *                 type: integer
+ *                 description: Work order ID
+ *                 example: 101
+ *           example:
+ *             wo_id: 101
+ *     responses:
+ *       200:
+ *         description: Material issue completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Material issue completed successfully"
+ *       400:
+ *         description: Error completing material issue
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error completing material issue"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/production/work-order/save-production-data:
+ *   post:
+ *     summary: Save production step data for a work order
+ *     description: |
+ *       Saves input/output quantities on a work-order step, calculates `waste_qty` and `yield_percent`, then recalculates work-order `progress_percent`.
+ *       Work order status is set to `4` (Completed) when progress reaches 100%, otherwise `3` (Material Issued / In Production).
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wo_id
+ *               - wo_step_id
+ *               - input_qty
+ *               - output_qty
+ *               - status
+ *             properties:
+ *               wo_id:
+ *                 type: integer
+ *                 description: Work order ID
+ *                 example: 101
+ *               wo_step_id:
+ *                 type: integer
+ *                 description: Work order step ID to update
+ *                 example: 501
+ *               input_qty:
+ *                 type: number
+ *                 description: Input quantity consumed for the step
+ *                 example: 100
+ *               output_qty:
+ *                 type: number
+ *                 description: Output quantity produced for the step
+ *                 example: 95
+ *               status:
+ *                 type: integer
+ *                 description: Step status to save (typically completed step status)
+ *                 example: 3
+ *           example:
+ *             wo_id: 101
+ *             wo_step_id: 501
+ *             input_qty: 100
+ *             output_qty: 95
+ *             status: 3
+ *     responses:
+ *       200:
+ *         description: Production data saved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production data saved successfully"
+ *                 data:
+ *                   type: object
+ *                   description: Updated work order with latest progress and step quantities for real-time UI refresh
+ *       400:
+ *         description: Validation or save error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Input quantity and output quantity are required"
+ *                 error:
+ *                   type: string
+ */

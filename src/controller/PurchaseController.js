@@ -82,6 +82,7 @@ exports.AddPurchase = async (req, res) => {
     );
 
     const productPromises = [];
+    const purchasedProducts = [];
 
     if (req.body.products && req.body.products.length > 0) {
       req.body.products.forEach((product) => {
@@ -91,27 +92,29 @@ exports.AddPurchase = async (req, res) => {
         const totalWithTax = productTotal + taxAmount;
         totalPurchaseAmount += totalWithTax;
 
+        const purchaseProductData = {
+          purchase_id: purchaseData.id,
+          product_id: product.product_id,
+          product_variant_id: product.product_variant_id,
+          description: product.description,
+          qty: product.qty,
+          unit_price: product.unit_price,
+          tax: product.tax,
+          taxExcl: productTotal,
+          taxIncl: totalWithTax, // Store total including tax
+          total_amount: totalWithTax,
+          vendor_id: req.body.vendor_id,
+          tax_amount: taxAmount,
+          user_id: req.user.id,
+          company_id: req.user.company_id,
+        }
+        purchasedProducts.push(purchaseProductData);
+
 
         // Create PurchaseProduct record
         productPromises.push(
-          PurchaseProduct.create({
-            purchase_id: purchaseData.id,
-            product_id: product.product_id,
-            product_variant_id: product.product_variant_id,
-            description: product.description,
-            qty: product.qty,
-            unit_price: product.unit_price,
-            tax: product.tax,
-            taxExcl: productTotal,
-            taxIncl: totalWithTax, // Store total including tax
-            total_amount: totalWithTax,
-            vendor_id: req.body.vendor_id,
-            tax_amount: taxAmount,
-            user_id: req.user.id,
-            company_id: req.user.company_id,
-          },
-          { transaction }
-        ));
+          PurchaseProduct.create(purchaseProductData, { transaction })
+        );
       });
 
       // Update the purchase record with total amount
@@ -121,9 +124,13 @@ exports.AddPurchase = async (req, res) => {
         },
         { where: { id: purchaseData.id }, transaction }
       ));
-
       // Create all purchase products and update the purchase record with total amount
       await Promise.all(productPromises);
+    }
+
+    // If send_to_vendor is true, add to inventory at transaction
+    if (req.body.send_to_vendor) {
+      await addToInventoryAtTransaction(purchasedProducts, purchaseData.warehouse_id, transaction);
     }
 
     // Commit the transaction
@@ -1755,6 +1762,7 @@ exports.pendingApproval = async (req, res) => {
         [Op.between]: [expected_arrival_start, expected_arrival_end],
       };
     }
+
     // Get all purchase records with pagination
     const purchaseRecords = await Purchase.findAndCountAll({
       attributes: ['id', 'reference_number', 'expected_arrival', 'total_amount', 'is_parent', 'status', 'created_at', 'updated_at'],
