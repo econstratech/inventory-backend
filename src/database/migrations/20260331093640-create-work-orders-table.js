@@ -77,7 +77,7 @@ exports.up = function(db) {
       type: 'smallint',
       notNull: true,
       defaultValue: 1,
-      comment: '1: Pending, 2: In Progress, 3: Completed, 4: Cancelled',
+      comment: '1: Pending, 2: In Progress, 3: Material Issued, 4: Completed, 5: Cancelled',
     },
     progress_percent: { type: 'int', defaultValue: 0 },
     created_at: { type: 'datetime', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },

@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
-const { MasterBOM, Product, ProductStockEntry, MasterUOM } = require('../model');
+const { MasterBOM, Product, MasterUOM } = require('../model');
 const { Op, QueryTypes } = require('sequelize');
 const sequelize = require('../database/db-connection');
 const CommonHelper = require('../helpers/commonHelper');
@@ -110,11 +110,10 @@ const validateBOMItem = (user, bomItem) => {
  * @param {object} req - The request object
  * @param {object} req.body - The request body
  * @param {number} req.body.final_product_id - Final product ID
- * @param {number} req.body.raw_material_variant_id - Raw material product ID
- * @param {number} req.body.raw_material_product_id - Raw material product variant ID
+ * @param {number} req.body.final_product_variant_id - Final product variant ID
+ * @param {number} req.body.raw_material_product_id - Raw material product ID
+ * @param {number} req.body.raw_material_variant_id - Raw material product variant ID
  * @param {number} req.body.quantity - Quantity required
- * @param {object} req.user - Authenticated user object
- * @param {number} req.user.company_id - Company ID from authenticated user
  * @param {object} res - The response object
  * @returns {Promise<void>}
  */
@@ -137,6 +136,7 @@ exports.AddBOM = async (req, res) => {
             req.body.map(bomItem => ({
                 company_id: req.user.company_id,
                 final_product_id: bomItem.final_product_id,
+                final_product_variant_id: bomItem.final_product_variant_id || null,
                 raw_material_product_id: bomItem.raw_material_product_id,
                 raw_material_variant_id: bomItem.raw_material_variant_id || null,
                 bom_no: bomNo,
@@ -222,18 +222,22 @@ exports.BulkUploadBOM = async (req, res) => {
             const fg = row["Final Product Code"]?.trim();
             const rm = row["Raw Material Product Code"]?.trim();
             const qty = parseInt(row["Quantity"], 10);
+            const fg_variant = row["FG Variant"]?.trim();
             const rm_variant = row["RM Variant"]?.trim();
 
-            // For variant based company, RM variant is required
-            if (!fg || !rm || isNaN(qty) || qty < 1 || (!rm_variant && isVariantBased)) continue;
+            // For variant based company, FG variant and RM variant are required
+            if (!fg || (!fg_variant && isVariantBased) || !rm || isNaN(qty) || qty < 1 || (!rm_variant && isVariantBased)) continue;
 
             const rm_variant_arr = rm_variant.split(' ');
+            const fg_variant_arr = fg_variant.split(' ');
             const rm_uom_label = rm_variant_arr[1];
+            const fg_uom_label = fg_variant_arr[1];
 
-            parsed.push({ fg, rm, qty, rm_variant, _row: row });
-            allProductCodes.add(fg);
+            parsed.push({ fg, fg_variant, rm, rm_variant, qty, _row: row });
+            allProductCodes.add(fg);   
             allProductCodes.add(rm);
             allUOMs.add(rm_uom_label);
+            allUOMs.add(fg_uom_label);
         }
 
         if (!parsed.length) {
@@ -275,9 +279,12 @@ exports.BulkUploadBOM = async (req, res) => {
         for (const item of parsed) {
             const fgId = productMap[item.fg];
             const rmId = productMap[item.rm];
-            const rm_variant = item.rm_variant ? item.rm_variant.split(' ') : [];
 
-            const variantId = rm_variant.length > 0 ? variantsMap[rm_variant[1]] : null;
+            const rm_variant = item.rm_variant ? item.rm_variant.split(' ') : [];
+            const fg_variant = item.fg_variant ? item.fg_variant.split(' ') : [];
+
+            const rm_variant_id = rm_variant.length > 0 ? variantsMap[rm_variant[1]] : null;
+            const fg_variant_id = fg_variant.length > 0 ? variantsMap[fg_variant[1]] : null;
 
             if (!fgId) {
                 errors.push({ row: item._row, reason: `Final product is not found: ${item.fg}` });
@@ -285,42 +292,52 @@ exports.BulkUploadBOM = async (req, res) => {
             } else if (!rmId) {
                 errors.push({ row: item._row, reason: `Raw material is not found: ${item.rm}` });
                 continue;
-            } else if (!variantId && isVariantBased) {
+            } else if (!fg_variant_id && isVariantBased) {
+                errors.push({ row: item._row, reason: `Final product variant is not found: ${item.fg}` });
+                continue;
+            } else if (!rm_variant_id && isVariantBased) {
                 errors.push({ row: item._row, reason: `Raw material variant is not found: ${item.rm}` });
                 continue;
             }
 
+            // Add valid record to array
             validRecords.push({
                 company_id,
                 final_product_id: fgId,
+                final_product_variant_id: fg_variant_id,
                 raw_material_product_id: rmId,
-                raw_material_variant_id: variantId,
+                raw_material_variant_id: rm_variant_id,
                 quantity: item.qty
             });
         }
 
-        // Generate unique BOM reference number
+        // Generate unique BOM number
         const bomReferenceNumber = await generateUniqueBOMNumber();
 
-        // Batch BOM number generation
+        // Add BOM number to each valid record
         for (const record of validRecords) {
             record.bom_no = bomReferenceNumber;
         }
 
+        // Bulk create BOM records in the database
         await MasterBOM.bulkCreate(validRecords, { transaction });
 
+        // Commit transaction
         await transaction.commit();
+
+        // Delete CSV file
         fs.unlinkSync(filePath);
 
+        // Return success message
         return res.status(201).json({
             status: true,
-            created: validRecords.length,
-            errors
+            message: `${validRecords.length} BOM${validRecords.length > 1 ? 's' : ''} uploaded successfully`
         });
-
     } catch (error) {
         console.log("Bulk BOM insert:", error);
+        // Rollback transaction
         await transaction.rollback();
+        // Delete CSV file
         if (filePath && fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
@@ -389,14 +406,6 @@ exports.UpdateBOM = async (req, res) => {
             }
         );
 
-        // Fetch updated BOM data
-        // const updatedBOM = await MasterBOM.findOne({
-        //     where: {
-        //         id: id,
-        //         company_id: req.user.company_id
-        //     }
-        // });
-
         return res.status(200).json({
             status: true,
             message: "BOM updated successfully",
@@ -464,10 +473,23 @@ exports.GetAllBOM = async (req, res) => {
             order: [['id', 'DESC']],
             limit,
             offset,
+            distinct: true,
             include: [
                 {
                     association: 'finalProduct',
-                    attributes: ['id', 'product_name', 'product_code', 'sku_product']
+                    attributes: ['id', 'product_name', 'product_code', 'sku_product'],
+                },
+                {
+                    association: 'finalProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    where: { status: 1 },
+                    required: false,
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label']
+                        }
+                    ]
                 },
                 {
                     association: 'rawMaterialProduct',
@@ -477,6 +499,7 @@ exports.GetAllBOM = async (req, res) => {
                     association: 'rawMaterialProductVariant',
                     attributes: ['id', 'weight_per_unit'],
                     where: { status: 1 },
+                    required: false,
                     include: [
                         {
                             association: 'masterUOM',

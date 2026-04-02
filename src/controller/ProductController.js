@@ -96,6 +96,23 @@ const UPLOAD_FIXED_HEADERS = {
   MARKUP_PERCENT: 'Markup Percent',
 };
 
+function getRowValueByHeader(row, headerName) {
+  if (!row || typeof row !== 'object') return undefined;
+
+  if (Object.prototype.hasOwnProperty.call(row, headerName)) {
+    return row[headerName];
+  }
+
+  const normalizedHeader = String(headerName).trim().toLowerCase();
+  for (const key of Object.keys(row)) {
+    if (String(key).trim().toLowerCase() === normalizedHeader) {
+      return row[key];
+    }
+  }
+
+  return undefined;
+}
+
 function parseBatchApplicable(value) {
   if (value === undefined || value === null || value === '') return 0;
   const v = String(value).trim().toLowerCase();
@@ -247,17 +264,27 @@ exports.uploadProducts = async (req, res) => {
       const products = [];
 
       for (const row of data) {
-        const itemCode = row[UPLOAD_FIXED_HEADERS.ITEM_CODE] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_CODE]).trim() : '';
-        const itemName = row[UPLOAD_FIXED_HEADERS.ITEM_NAME] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_NAME]).trim() : '';
-        const itemType = row[UPLOAD_FIXED_HEADERS.ITEM_TYPE] != null ? String(row[UPLOAD_FIXED_HEADERS.ITEM_TYPE]).trim() : '';
-        const categoryName = row[UPLOAD_FIXED_HEADERS.CATEGORY] != null ? String(row[UPLOAD_FIXED_HEADERS.CATEGORY]).trim() : '';
-        const brandName = row[UPLOAD_FIXED_HEADERS.BRAND] != null ? String(row[UPLOAD_FIXED_HEADERS.BRAND]).trim() : '';
-        const uomName = row[UPLOAD_FIXED_HEADERS.UOM] != null ? String(row[UPLOAD_FIXED_HEADERS.UOM]).trim() : '';
+        const itemCodeValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.ITEM_CODE);
+        const itemNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.ITEM_NAME);
+        const itemTypeValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.ITEM_TYPE);
+        const categoryNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.CATEGORY);
+        const brandNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.BRAND);
+        const uomNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.UOM);
+        const weightPerUnitValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT);
+        const batchApplicableValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.BATCH_APPLICABLE);
+        const markupPercentValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.MARKUP_PERCENT);
 
-        const weightPerUnit = row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT] != null ? parseInt(row[UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT]) : 0;
-        const batchApplicable = parseBatchApplicable(row[UPLOAD_FIXED_HEADERS.BATCH_APPLICABLE]);
-        const markupPercent = row[UPLOAD_FIXED_HEADERS.MARKUP_PERCENT] != null && row[UPLOAD_FIXED_HEADERS.MARKUP_PERCENT] !== ''
-          ? parseFloat(row[UPLOAD_FIXED_HEADERS.MARKUP_PERCENT])
+        const itemCode = itemCodeValue != null ? String(itemCodeValue).trim() : '';
+        const itemName = itemNameValue != null ? String(itemNameValue).trim() : '';
+        const itemType = itemTypeValue != null ? String(itemTypeValue).trim() : '';
+        const categoryName = categoryNameValue != null ? String(categoryNameValue).trim() : '';
+        const brandName = brandNameValue != null ? String(brandNameValue).trim() : '';
+        const uomName = uomNameValue != null ? String(uomNameValue).trim() : '';
+
+        const weightPerUnit = weightPerUnitValue != null ? parseInt(weightPerUnitValue, 10) : 0;
+        const batchApplicable = parseBatchApplicable(batchApplicableValue);
+        const markupPercent = markupPercentValue != null && markupPercentValue !== ''
+          ? parseFloat(markupPercentValue)
           : null;
 
         // If item code and item name are not present then skip the row
@@ -275,7 +302,6 @@ exports.uploadProducts = async (req, res) => {
           attributes: ['id'],
           where: { product_code: itemCode, company_id: companyId },
           raw: true,
-          transaction,
         });
         if (isProductExist) {
           // If product already exist then add varient
@@ -2479,6 +2505,7 @@ exports.AddToStock = async (req, res) => {
     const seen = new Set();
     const duplicates = [];
     const validationErrors = [];
+    const uniqueStockEntries = [];
     const isVariantBased = req.user.is_variant_based;
 
 
@@ -2500,9 +2527,12 @@ exports.AddToStock = async (req, res) => {
         validationErrors.push(`Entry ${index}: quantity is required`);
       }
 
-      // Check for duplicate product_id & warehouse_id combination
+      // Check for duplicate combination in payload
       if (entry.product_id && entry.warehouse_id) {
-        const key = `${entry.product_id}_${entry.warehouse_id}`;
+        const key = isVariantBased
+          ? `${entry.product_id}_${entry.product_variant_id}_${entry.warehouse_id}`
+          : `${entry.product_id}_${entry.warehouse_id}`;
+
         if (seen.has(key)) {
           duplicates.push({
             product_id: entry.product_id,
@@ -2510,10 +2540,13 @@ exports.AddToStock = async (req, res) => {
             warehouse_id: entry.warehouse_id,
             entry_index: index
           });
+          continue;
         } else {
           seen.add(key);
         }
       }
+
+      uniqueStockEntries.push(entry);
     }
 
     // Return validation errors if any
@@ -2525,23 +2558,23 @@ exports.AddToStock = async (req, res) => {
       });
     }
 
-    // Return error if duplicates found
-    if (duplicates.length > 0) {
-      return res.status(400).json({
-        status: false,
-        message: "Duplicate product_id and warehouse_id combinations found in payload",
-        duplicates: duplicates
+    // If all payload rows are duplicates, nothing to process
+    if (uniqueStockEntries.length === 0) {
+      return res.status(200).json({
+        status: true,
+        message: "No unique stock entries to process",
+        data: [],
+        ignored_duplicates_count: duplicates.length,
+        ignored_duplicates: duplicates
       });
     }
 
     // Validate that no duplicate product_id & warehouse_id combinations exist in the payload
-    const productWarehousePairs = stockEntries.map(e => ({
+    const productWarehousePairs = uniqueStockEntries.map(e => ({
       product_id: e.product_id,
       warehouse_id: e.warehouse_id,
       ...(isVariantBased ? { product_variant_id: e.product_variant_id } : {}),
     }));
-
-    console.log("productWarehousePairs", productWarehousePairs);
 
 
     const existingStockRows = await ProductStockEntry.findAll({
@@ -2568,7 +2601,7 @@ exports.AddToStock = async (req, res) => {
     const entriesToCreate = [];
     const trackProductstockEntries = [];
 
-    stockEntries.forEach(entry => {
+    uniqueStockEntries.forEach(entry => {
       const entryToCreate = {
         company_id: req.user.company_id,
         product_id: entry.product_id,
@@ -2620,7 +2653,9 @@ exports.AddToStock = async (req, res) => {
     return res.status(200).json({
       status: true,
       message: `${createdEntries.length} stock entries added successfully`,
-      data: createdEntries
+      data: createdEntries,
+      ignored_duplicates_count: duplicates.length,
+      ...(duplicates.length > 0 ? { ignored_duplicates: duplicates } : {})
     });
     
 

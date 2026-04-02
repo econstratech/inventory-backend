@@ -47,6 +47,7 @@ const ProductionStepsMaster = require('./ProductionStepsMaster');
 const CompanyProductionFlow = require('./CompanyProductionFlow');
 const WorkOrder = require('./WorkOrder');
 const WorkOrderStep = require('./WorkOrderStep');
+const WorkOrderMaterialIssue = require('./WorkOrderMaterialIssue');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -134,6 +135,8 @@ ProductStockEntry.belongsTo(ProductVariant, {
     foreignKey: 'product_variant_id',
     as: 'productVariant'
 });
+
+ProductVariant.hasMany(ProductStockEntry, { foreignKey: 'product_variant_id', as: 'productStockEntries' });
 ProductVariant.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 ProductVariant.belongsTo(MasterUOM, { foreignKey: 'uom_id', as: 'masterUOM' });
 ProductVariant.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
@@ -295,6 +298,10 @@ MasterBOM.belongsTo(ProductVariant, {
     foreignKey: 'raw_material_variant_id',
     as: 'rawMaterialProductVariant'
 });
+MasterBOM.belongsTo(ProductVariant, {
+    foreignKey: 'final_product_variant_id',
+    as: 'finalProductVariant'
+});
 
 // TrackBatchProductLog associations
 TrackBatchProductLog.belongsTo(ReceiveProductBatch, {
@@ -369,11 +376,19 @@ CompanyProductionFlow.belongsTo(ProductionStepsMaster, { foreignKey: 'step_id', 
 
 WorkOrder.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 WorkOrder.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+WorkOrder.belongsTo(ProductVariant, { foreignKey: 'final_product_variant_id', as: 'finalProductVariant' });
 WorkOrder.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
 WorkOrder.belongsTo(ProductionStepsMaster, { foreignKey: 'production_step_id', as: 'productionStep' });
 WorkOrder.hasMany(WorkOrderStep, { foreignKey: 'wo_id', as: 'workOrderSteps' });
+WorkOrder.hasMany(WorkOrderMaterialIssue, { foreignKey: 'wo_id', as: 'workOrderMaterialIssues' });
+WorkOrder.belongsTo(User, { foreignKey: 'material_issued_by', as: 'materialIssuedBy' });
 WorkOrderStep.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
 WorkOrderStep.belongsTo(ProductionStepsMaster, { foreignKey: 'step_id', as: 'step' });
+
+WorkOrderMaterialIssue.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
+// WorkOrderMaterialIssue.belongsTo(Product, { foreignKey: 'rm_product_id', as: 'rmProduct' });
+// WorkOrderMaterialIssue.belongsTo(ProductVariant, { foreignKey: 'rm_product_variant_id', as: 'rmProductVariant' });
+// WorkOrderMaterialIssue.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
 module.exports = {
     Module,
@@ -421,4 +436,5 @@ module.exports = {
     CompanyProductionFlow,
     WorkOrder,
     WorkOrderStep,
+    WorkOrderMaterialIssue,
 };
