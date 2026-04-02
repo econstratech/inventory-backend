@@ -19,6 +19,10 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    final_product_variant_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     customer_id: {
         type: DataTypes.BIGINT,
         allowNull: false,
@@ -39,6 +43,15 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.SMALLINT,
         allowNull: false,
         defaultValue: 1,
+        comment: '1: Pending, 2: In Progress, 3: Material Issued, 4: Completed, 5: Cancelled',
+    },
+    material_issued_by: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
+    material_issued_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
     },
     progress_percent: {
         type: DataTypes.INTEGER,

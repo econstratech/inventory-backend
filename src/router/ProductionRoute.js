@@ -1,7 +1,11 @@
 const express = require("express");
 const { 
     CreateWorkOrder,
-    GetAllWorkOrders
+    GetAllWorkOrders,
+    DeleteWorkOrder,
+    GetBOMListForWorkOrder,
+    CreateMaterialIssue,
+    CompleteMaterialIssue
 } = require("../controller/ProductionController");
 const { authToken } = require("../utils/Middleware");
 // const uploadsproduction  = require("../utils/uploads.production");
@@ -11,6 +15,11 @@ const router = express.Router();
 
 router.post('/work-order/create', authToken, CreateWorkOrder);
 router.get('/work-order/list', authToken, GetAllWorkOrders);
+router.delete('/work-order/delete/:id', authToken, DeleteWorkOrder);
+
+router.get('/work-order/bom-list/:wo_id', authToken, GetBOMListForWorkOrder);
+router.post('/work-order/material-issue', authToken, CreateMaterialIssue);
+router.post('/work-order/material-issue-complete', authToken, CompleteMaterialIssue);
 
 
 module.exports = router;

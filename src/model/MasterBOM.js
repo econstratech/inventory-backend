@@ -22,6 +22,10 @@ const MasterBOM = sequelize.define("MasterBOM", {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    final_product_variant_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     raw_material_product_id: {
         type: DataTypes.BIGINT,
         allowNull: false,
