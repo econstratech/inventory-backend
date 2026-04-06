@@ -3,7 +3,7 @@ const express = require("express");
 const { 
     AddProduct, 
     GetAllProducts, 
-    DeleteProducts, 
+    DeleteProduct, 
     UpdateProduct, 
     GetAllDeletedProducts, 
     GetAllDeletedProductsRestore, 
@@ -39,7 +39,9 @@ const {
     GetIndentRequiredProducts,
     ProductAvailableBatches,
     UpdateProductVariants,
-    GetProductVariants
+    GetProductVariants,
+    RestoreProduct,
+    BulkExportProducts
 } = require("../controller/ProductController");
 const { authToken } = require("../utils/Middleware");
 const { upload } = require("../utils/ImageUpload");
@@ -62,8 +64,10 @@ router.post("/update/:id",authToken, upload.single('file'), UpdateProduct);
 router.post("/update-variants/:id", authToken, UpdateProductVariants);
 router.get("/variants/:id", authToken, GetProductVariants);
 router.get("/details/:id",authToken, GetProductDetails);
-router.delete('/:id', authToken, DeleteProducts);
+router.delete('/:id', authToken, DeleteProduct);
+router.post('/restore/:id', authToken, RestoreProduct);
 router.post('/bulk-upload', authToken, excelbulkproduct.single('file'), uploadProducts);
+router.post('/bulk-export', authToken, BulkExportProducts);
 router.post('/add-to-stock', authToken, AddToStock);
 router.post('/bulk-add-to-stock', authToken, excelbulkproduct.single('file'), BulkAddToStock);
 

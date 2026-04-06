@@ -1,4 +1,4 @@
-const { Op, fn, col, literal } = require("sequelize");
+const { Op, fn, col, literal, QueryTypes } = require("sequelize");
 
 const XLSX = require("xlsx");
 const csv = require("csv-parser");
@@ -1083,56 +1083,399 @@ exports.ProductAvailableBatches = async (req, res) => {
   }
 };
 
-exports.DeleteProducts = async (req, res) => {
+exports.DeleteProduct = async (req, res) => {
+  // Start a transaction
+  const transaction = await sequelize.transaction();
   try {
     const productId = req.params.id;
     if (!productId || isNaN(productId)) {
       return res.status(400).json({ message: "Invalid product ID" });
     }
-    const product = await Product.findOne({ where: { id: productId } });
-    if (product) {
-
-      const updatedRowsCount = await Product.update(
-        { status: "0" },
-        { where: { id: productId } }
-      );
-
-      res.json({ message: "Item removed" });
-    } else {
-      res.status(404).json({ message: "Item not found" });
+    // Check if the product exists, if not return 404
+    const product = await Product.findOne({ 
+      attributes: ['id'],
+      where: { id: productId },
+      raw: true,
+    });
+    if (!product) {
+      return res.status(404).json({ 
+        status: false,
+        message: "Product not found" 
+      });
     }
+
+    await Promise.all([
+      // Soft delete the product variants
+      ProductVariant.update(
+        { status: "0" },
+        { where: { product_id: productId }, transaction }
+      ),
+
+      ProductStockEntry.destroy(
+        { where: { product_id: productId }, transaction }
+      ),
+    ]);
+
+    // Soft delete the product
+    await Product.update(
+      { status: "0" },
+      { where: { id: productId }, transaction }
+    );
+
+    // Commit the transaction
+    await transaction.commit();
+
+    // Return success response
+    return res.status(200).json({ 
+      status: true,
+      message: "Product has benn been removed successfully" 
+    });
   } catch (error) {
     console.error("Error deleting product:", error);
-    res.status(500).json({ message: "Server error" });
+    // Rollback the transaction
+    await transaction.rollback();
+    return res.status(500).json({ 
+      status: false,
+      message: "Error deleting product",
+      error: error.message
+    });
   }
 };
 
-//bulk product delete
-exports.DeleteMultipleProducts = async (req, res) => {
+/**
+ * Restore a product
+ * @param {number} productId - The ID of the product to restore
+ * @returns {Promise<object>} - The restored product
+ */
+exports.RestoreProduct = async (req, res) => {
   try {
-    const { productIds } = req.body;
+    const productId = req.params.id;
+    if (!productId || isNaN(productId)) {
+      return res.status(400).json({ message: "Invalid product ID" });
+    }
 
-    // console.log("Received productIds:", productIds);
+    // Restore the product variants, product stock entries and product
+    await Promise.all([
+      ProductVariant.update(
+        { status: "1" },
+        { where: { product_id: productId } }
+      ),
+      ProductStockEntry.update(
+        { deleted_at: null },
+        { where: { product_id: productId }, paranoid: false }
+      ),
+      Product.update(
+        { status: "1" },
+        { where: { id: productId } }
+      ),
+    ]);
 
-    if (!Array.isArray(productIds) || productIds.length === 0) {
+    // Return success response
+    return res.status(200).json({ 
+      status: true,
+      message: "Product has been restored successfully" 
+    });
+  } catch (error) {
+    console.error("Error restoring product:", error);
+    return res.status(500).json({ 
+      status: false,
+      message: "Error restoring product",
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Delete multiple products
+ * @param {number} productIds - The IDs of the products to delete
+ * @param {Object} res - Express response object
+ * @returns {Promise<object>} - The deleted products
+ */
+exports.DeleteMultipleProducts = async (req, res) => {
+  // Start a transaction
+  const transaction = await sequelize.transaction();
+  try {
+    const { ids } = req.body || {};
+
+    if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ message: "Invalid or missing product IDs" });
     }
 
-    const [updatedRowsCount] = await Product.update(
-      { status: "0" },
-      { where: { id: productIds } }
-    );
+    await Promise.all([
+      Product.update(
+        { status: "0" },
+        { where: { id: ids }, transaction }
+      ),
+      ProductVariant.update(
+        { status: "0" },
+        { where: { product_id: ids }, transaction }
+      ),
+      ProductStockEntry.destroy(
+        { where: { product_id: ids }, paranoid: false, transaction }
+      ),
+    ]);
 
-    if (updatedRowsCount > 0) {
-      return res.json({
-        message: `${updatedRowsCount} products deleted successfully.`,
-      });
-    } else {
-      return res.status(404).json({ message: "No products found to delete" });
-    }
+    // Commit the transaction
+    await transaction.commit();
+
+    // Return success response
+    return res.status(200).json({ 
+      status: true,
+      message: "Products deleted successfully" 
+    });
   } catch (error) {
     console.error("Error deleting multiple products:", error);
-    return res.status(500).json({ message: "Server error" });
+    // Rollback the transaction
+    await transaction.rollback();
+    return res.status(500).json({ 
+      status: false,
+      message: "Error deleting multiple products",
+      error: error.message
+    });
+  }
+};
+
+const mapExportDatafields = {
+  product_name: 'Product Name',
+  product_code: 'Product Code',
+  is_batch_applicable: 'Batch Applicable',
+  product_variants: 'Product Variants',
+  product_attribute_values: 'Product Attribute Values',
+  product_category: 'Product Category',
+  product_brand: 'Product Brand',
+  product_uom: 'Product UOM',
+  product_weight_per_unit: 'Product Weight Per Unit',
+}
+
+/**
+ * Export multiple products
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<object>} - The exported products
+ */
+exports.BulkExportProducts = async (req, res) => {
+  try {
+    const { ids, searchkey = null } = req.body || {};
+    const companyId = req.user.company_id;
+    const isVariantBased = req.user.is_variant_based;
+    const batchSize = 50;
+
+    const hasIdsFilter = Array.isArray(ids) && ids.length > 0;
+    const validIds = hasIdsFilter
+      ? [...new Set(
+          ids
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0)
+        )]
+      : [];
+
+    if (hasIdsFilter && validIds.length === 0) {
+      return res.status(400).json({ message: "Invalid product IDs" });
+    }
+
+    const mapExportDatafields = [
+      { key: "product_code", label: "Product Code" },
+      { key: "product_name", label: "Product Name" },
+      { key: "category_name", label: "Category" },
+      { key: "product_type_name", label: "Product Type" },
+      { key: "brand_name", label: "Brand" },
+      { key: "is_batch_applicable", label: "Batch Product" },
+      { key: "markup_percentage", label: "Markup Percentage" },
+      { key: "uom", label: "UOM" },
+      { key: "weight_per_unit", label: "Weight Per Unit" },
+    ];
+
+    const csvEscape = (value) => {
+      if (value === null || value === undefined) return "";
+      const stringValue = String(value);
+      if (stringValue.includes('"') || stringValue.includes(",") || stringValue.includes("\n") || stringValue.includes("\r")) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    const writeLine = async (line) => {
+      const canContinue = res.write(line);
+      if (!canContinue) {
+        await new Promise((resolve) => res.once("drain", resolve));
+      }
+    };
+
+    const timestamp = moment().format("YYYYMMDDHHmmss");
+    const filename = `product_master_${timestamp}.csv`;
+
+    const exportModelAttributes = mapExportDatafields.map((field) => field.key);
+
+    const attributeHeaderQuery = `
+      SELECT DISTINCT pa.name AS attribute_name
+      FROM product p
+      INNER JOIN product_attribute_values pav ON p.id = pav.product_id
+      INNER JOIN product_attributes pa ON pa.id = pav.product_attribute_id
+      WHERE p.company_id = :companyId
+        ${hasIdsFilter ? "AND p.id IN (:ids)" : ""}
+        AND pa.name IS NOT NULL
+        AND pa.name <> ''
+      ORDER BY pa.name ASC
+    `;
+
+    const dynamicAttributeHeaders = (await sequelize.query(attributeHeaderQuery, {
+      replacements: hasIdsFilter ? { companyId, ids: validIds } : { companyId },
+      type: QueryTypes.SELECT,
+    })).map((row) => row.attribute_name);
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const exportHeaderFields = [
+      ...mapExportDatafields.map((field) => field.label),
+      ...dynamicAttributeHeaders,
+    ].map(csvEscape).join(",") + "\n";
+    await writeLine(exportHeaderFields);
+
+    const selectFieldsForVariants = isVariantBased
+      ? ", pv.id AS variant_id, pv.uom_id, vuom.label AS variant_uom_label, pv.weight_per_unit AS variant_weight_per_unit"
+      : "";
+    const joinFieldsForVariants = isVariantBased
+      ? "LEFT JOIN product_variants pv ON p.id = pv.product_id LEFT JOIN master_uom vuom ON pv.uom_id = vuom.id"
+      : "";
+
+    let whereClause = "";
+    if (searchkey) {
+      whereClause = "AND (p.product_name LIKE :searchkey OR p.product_code LIKE :searchkey)";
+    }
+
+
+    const productExportQuery = `
+      SELECT
+        p.id,
+        p.product_code,
+        p.product_name,
+        p.is_batch_applicable,
+        c.title AS category_name,
+        pt.name AS product_type_name,
+        b.name AS brand_name,
+        p.markup_percentage
+        ${!isVariantBased ? ",base_uom.label AS uom_label" : ""}
+        ${selectFieldsForVariants}
+      FROM product p
+      LEFT JOIN product_categories c ON p.product_category_id = c.id
+      LEFT JOIN master_product_types pt ON p.product_type_id = pt.id
+      LEFT JOIN master_brands b ON p.brand_id = b.id
+      LEFT JOIN master_uom base_uom ON p.uom_id = base_uom.id
+      ${joinFieldsForVariants}
+      WHERE p.company_id = :companyId AND p.id IN (:batchIds) ${whereClause}
+      ORDER BY p.id ASC ${isVariantBased ? ", pv.id ASC" : ""}
+    `;
+
+    const productAttributeQuery = `
+      SELECT
+        pav.product_id,
+        pa.name AS attribute_name,
+        pav.value AS attribute_value
+      FROM product_attribute_values pav
+      INNER JOIN product_attributes pa ON pa.id = pav.product_attribute_id
+      WHERE pav.product_id IN (:batchIds)
+      ORDER BY pav.product_id ASC, pa.name ASC
+    `;
+
+    const mapQueryResultToExportFields = (queryRow) =>
+      exportModelAttributes.reduce((acc, exportFieldKey) => {
+        if (exportFieldKey === "uom") {
+          acc[exportFieldKey] = queryRow?.variant_uom_label ?? queryRow?.uom_label ?? "";
+          return acc;
+        }
+        if (exportFieldKey === "weight_per_unit") {
+          acc[exportFieldKey] = queryRow?.variant_weight_per_unit ?? queryRow?.weight_per_unit ?? "";
+          return acc;
+        }
+        acc[exportFieldKey] = queryRow?.[exportFieldKey] ?? "";
+        return acc;
+      }, {});
+
+    const writeExportRows = async (batchIds) => {
+      if (!batchIds.length) return;
+
+      const queryRows = await sequelize.query(productExportQuery, {
+        replacements: {
+          companyId,
+          batchIds,
+          ...(searchkey ? { searchkey: `%${searchkey}%` } : {})
+        },
+        type: QueryTypes.SELECT,
+      });
+
+      if (!queryRows.length) return;
+
+      const attributeRows = await sequelize.query(productAttributeQuery, {
+        replacements: { batchIds },
+        type: QueryTypes.SELECT,
+      });
+
+      const productAttributesMap = {};
+      for (const attrRow of attributeRows) {
+        const productId = attrRow.product_id;
+        const attributeName = attrRow.attribute_name;
+        const attributeValue = attrRow.attribute_value ?? "";
+        if (!attributeName) continue;
+
+        if (!productAttributesMap[productId]) {
+          productAttributesMap[productId] = {};
+        }
+        if (!productAttributesMap[productId][attributeName]) {
+          productAttributesMap[productId][attributeName] = new Set();
+        }
+        productAttributesMap[productId][attributeName].add(String(attributeValue));
+      }
+
+      for (const queryRow of queryRows) {
+        const mappedProduct = mapQueryResultToExportFields(queryRow);
+        const fixedValues = exportModelAttributes.map((field) => csvEscape(mappedProduct[field]));
+        const dynamicValues = dynamicAttributeHeaders.map((attributeName) => {
+          const attrSet = productAttributesMap?.[queryRow.id]?.[attributeName];
+          if (!attrSet || !attrSet.size) return "";
+          return csvEscape(Array.from(attrSet).join(" | "));
+        });
+
+        await writeLine([...fixedValues, ...dynamicValues].join(",") + "\n");
+      }
+    };
+
+    if (hasIdsFilter) {
+      for (let i = 0; i < validIds.length; i += batchSize) {
+        const batchIds = validIds.slice(i, i + batchSize);
+        await writeExportRows(batchIds);
+      }
+    } else {
+      let offset = 0;
+      while (true) {
+        const batchProducts = await Product.findAll({
+          attributes: ["id"],
+          where: { company_id: companyId, status: 1 },
+          order: [["id", "ASC"]],
+          limit: batchSize,
+          offset,
+          raw: true,
+        });
+
+        if (!batchProducts.length) break;
+        const batchIds = batchProducts.map((row) => row.id);
+
+        await writeExportRows(batchIds);
+        offset += batchSize;
+      }
+    }
+
+    return res.end();
+  } catch (error) {
+    console.error("Error exporting multiple products:", error);
+    if (res.headersSent) {
+      return res.end();
+    }
+    return res.status(500).json({ 
+      status: false,
+      message: "Error exporting multiple products",
+      error: error.message
+    });
   }
 };
 
