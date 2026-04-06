@@ -209,6 +209,64 @@
 
 /**
  * @swagger
+ * /api/product/restore/{id}:
+ *   post:
+ *     summary: Restore a deleted product
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Product ID to restore
+ *         example: 123
+ *     responses:
+ *       200:
+ *         description: Product has been restored successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Product has been restored successfully
+ *       400:
+ *         description: Invalid product ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Invalid product ID
+ *       500:
+ *         description: Error restoring product
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Error restoring product
+ *                 error:
+ *                   type: string
+ *                   example: Internal server error
+ */
+
+/**
+ * @swagger
  * /api/product/delete-multiple-restore:
  *   delete:
  *     summary: Restore multiple deleted products
@@ -668,6 +726,63 @@
  *     responses:
  *       200:
  *         description: Products uploaded successfully
+ */
+
+/**
+ * @swagger
+ * /api/product/bulk-export:
+ *   post:
+ *     summary: Export products as CSV
+ *     description: Exports product master data in CSV format. If `ids` is provided, exports only those products. If `ids` is missing or empty, exports all company products in batches.
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               ids:
+ *                 type: array
+ *                 description: Optional list of product IDs to export
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2, 3]
+ *     responses:
+ *       200:
+ *         description: CSV file stream
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Invalid product IDs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Invalid product IDs
+ *       500:
+ *         description: Error exporting multiple products
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: Error exporting multiple products
+ *                 error:
+ *                   type: string
  */
 
 /**
