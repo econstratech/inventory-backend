@@ -19,6 +19,10 @@ const WorkOrderStep = sequelize.define('work_order_steps', {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+    uom_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     input_qty: {
         type: DataTypes.INTEGER,
         allowNull: true,

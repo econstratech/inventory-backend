@@ -399,3 +399,198 @@
  *                   description: Validation message or error object
  *                   example: "Company ID is required !"
  */
+
+/**
+ * @swagger
+ * /api/company/production-steps/{id}:
+ *   get:
+ *     summary: Get company production steps
+ *     description: Returns all active production steps configured for the given company (`is_active` = 1), ordered by id ascending. Each row links to a master step via `master_step_id`.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Company ID
+ *         example: 39
+ *     responses:
+ *       200:
+ *         description: Production steps fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production steps fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         description: Company production step row ID
+ *                         example: 12
+ *                       name:
+ *                         type: string
+ *                         example: "Printing"
+ *                       description:
+ *                         type: string
+ *                         nullable: true
+ *                         example: "Screen printing step"
+ *                       is_active:
+ *                         type: integer
+ *                         description: Active flag (1 = active)
+ *                         example: 1
+ *                       master_step_id:
+ *                         type: integer
+ *                         description: Reference to master production step
+ *                         example: 1
+ *       400:
+ *         description: Server or request error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   description: Error details
+ */
+
+/**
+ * @swagger
+ * /api/company/production-steps:
+ *   post:
+ *     summary: Create company production step from master step
+ *     description: |
+ *       Links an active master production step to a company by creating a `company_production_steps` row
+ *       with name and description copied from the master step. Requires `company_id` and `step_id` (master step id).
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - company_id
+ *               - step_id
+ *             properties:
+ *               company_id:
+ *                 type: integer
+ *                 description: Target company ID
+ *                 example: 39
+ *               step_id:
+ *                 type: integer
+ *                 description: Master production step ID (`ProductionStepsMaster.id`); must be active (`is_active` = 1)
+ *                 example: 1
+ *           example:
+ *             company_id: 39
+ *             step_id: 1
+ *     responses:
+ *       200:
+ *         description: Company production step created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Company production step has been created successfully"
+ *       400:
+ *         description: Validation error, master step not found, or server error in catch handler
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   oneOf:
+ *                     - type: string
+ *                       example: "Please fill all field !"
+ *                     - type: string
+ *                       example: "Step not found !"
+ *                   description: Validation message, not-found message, or error object from catch
+ */
+
+/**
+ * @swagger
+ * /api/company/production-steps/{stepId}:
+ *   delete:
+ *     summary: Delete company production step
+ *     description: |
+ *       Soft-deletes the `company_production_steps` row for the given id, scoped to the authenticated user's company (`JWT` `company_id`).
+ *       Also removes matching rows from `company_production_flows` for that company and step so the production flow stays consistent.
+ *     tags: [Company]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: stepId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Company production step row id (`company_production_steps.id`)
+ *         example: 12
+ *     responses:
+ *       200:
+ *         description: Production step deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production step deleted successfully"
+ *       400:
+ *         description: Missing company context, invalid step id, or server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   description: Validation message or error object
+ *                   example: "Valid step ID is required !"
+ *       404:
+ *         description: Step not found for this company
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Production step not found !"
+ */

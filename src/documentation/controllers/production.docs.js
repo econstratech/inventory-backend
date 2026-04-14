@@ -117,8 +117,9 @@
  *   get:
  *     summary: Get work order list (paginated)
  *     description: |
- *       Returns paginated work orders for the authenticated user's company. Default `status` filter is `1` (pending); pass `status` to override.
+ *       Returns paginated work orders for the authenticated user's company.
  *       Search matches `wo_number`, product name, or customer name.
+ *       `status` accepts workflow buckets: `active` (1,2,3), `completed` (4), `cancelled` (5).
  *       **Production step filter:** query param `production_step_id` filters by the work order's current master step. Load filter options from `GET /api/company/get-company-production-flow/{companyId}` — use each row's `step_id` (same as nested `step.id`) as the `production_step_id` value.
  *     tags: [Production]
  *     security:
@@ -151,7 +152,8 @@
  *         schema:
  *           type: string
  *           default: created_at
- *         description: Sort field (e.g. `created_at`, `due_date`, `wo_number`)
+ *           enum: [created_at, due_date, wo_number, customer_name, product_name]
+ *         description: Sort field
  *         example: "created_at"
  *       - in: query
  *         name: order
@@ -188,9 +190,10 @@
  *       - in: query
  *         name: status
  *         schema:
- *           type: integer
- *         description: Overrides default pending-only filter when provided
- *         example: 1
+ *           type: string
+ *           enum: [active, completed, cancelled]
+ *         description: Filter by workflow status bucket
+ *         example: "active"
  *       - in: query
  *         name: due_date
  *         schema:
@@ -265,7 +268,14 @@
  *                           status:
  *                             type: integer
  *                             example: 1
+ *                           material_issued_at:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
  *                           progress_percent:
+ *                             type: number
+ *                             example: 0
+ *                           material_issue_percent:
  *                             type: number
  *                             example: 0
  *                           created_at:
@@ -332,6 +342,9 @@
  *                                   type: integer
  *                                 step_id:
  *                                   type: integer
+ *                                 status:
+ *                                   type: integer
+ *                                   example: 1
  *                                 sequence:
  *                                   type: integer
  *                                 input_qty:
@@ -352,6 +365,317 @@
  *                                       type: integer
  *                                     name:
  *                                       type: string
+ *                           materialIssuedBy:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ */
+
+/**
+ * @swagger
+ * /api/production/work-order/{wo_id}:
+ *   get:
+ *     summary: Get work order by ID
+ *     description: |
+ *       Returns a single work order by primary key with nested `product`, `customer`, and `workOrderSteps` (each step includes nested `step` with id and name).
+ *       When the authenticated user's JWT includes a truthy `is_variant_based` flag, the response also includes `finalProductVariant` with nested `masterUOM` (`label`).
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: wo_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Work order ID
+ *         example: 101
+ *     responses:
+ *       200:
+ *         description: Work order fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 101
+ *                     wo_number:
+ *                       type: string
+ *                       example: "WO123456"
+ *                     planned_qty:
+ *                       type: number
+ *                       example: 80
+ *                     due_date:
+ *                       type: string
+ *                       format: date
+ *                       example: "2026-03-31"
+ *                     status:
+ *                       type: integer
+ *                       description: Work order workflow status code
+ *                       example: 1
+ *                     product:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 12234
+ *                         product_name:
+ *                           type: string
+ *                           example: "Corrugated Box"
+ *                         product_code:
+ *                           type: string
+ *                           example: "P-12234"
+ *                     customer:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 125
+ *                         name:
+ *                           type: string
+ *                           example: "ABC Retail Pvt Ltd"
+ *                     workOrderSteps:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 501
+ *                           step_id:
+ *                             type: integer
+ *                             description: Company production step id for this work order step
+ *                             example: 12
+ *                           status:
+ *                             type: integer
+ *                             example: 1
+ *                           sequence:
+ *                             type: integer
+ *                             example: 1
+ *                           input_qty:
+ *                             type: integer
+ *                             nullable: true
+ *                           output_qty:
+ *                             type: integer
+ *                             nullable: true
+ *                           waste_qty:
+ *                             type: integer
+ *                             nullable: true
+ *                           yield_percent:
+ *                             type: integer
+ *                             nullable: true
+ *                           step:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                                 example: 12
+ *                               name:
+ *                                 type: string
+ *                                 example: "Printing"
+ *                     finalProductVariant:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Present only when JWT `is_variant_based` is truthy
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 55
+ *                         weight_per_unit:
+ *                           type: number
+ *                           example: 2.5
+ *                         masterUOM:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 3
+ *                             label:
+ *                               type: string
+ *                               example: "kg"
+ *       404:
+ *         description: Work order not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order not found"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ */
+
+/**
+ * @swagger
+ * /api/production/work-order/update/{wo_id}:
+ *   put:
+ *     summary: Update a work order
+ *     description: |
+ *       Updates customer, product, planned quantity, due date, current production step (`production_step_id` = `company_production_steps.id`), and optional `final_product_variant_id` when JWT `is_variant_based` is truthy (otherwise `final_product_variant_id` is cleared).
+ *       **`work_order_steps`** is replaced (soft-deleted and re-created) only when the work order **`status` is `1` (Pending)**. If the work order has moved past Pending, omit `work_order_steps` or send an empty array to update header fields only; sending a non-empty list returns **400**.
+ *       All `step_id` values (including `production_step_id`) must refer to **active** company production steps for the authenticated user's company.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: wo_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Work order ID
+ *         example: 101
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - customer_id
+ *               - product_id
+ *               - planned_qty
+ *               - due_date
+ *               - production_step_id
+ *             properties:
+ *               customer_id:
+ *                 type: integer
+ *                 example: 127375
+ *               product_id:
+ *                 type: integer
+ *                 example: 11
+ *               final_product_variant_id:
+ *                 type: integer
+ *                 nullable: true
+ *                 description: Set when company is variant-based; ignored (stored as null) when not variant-based
+ *                 example: 16
+ *               planned_qty:
+ *                 type: number
+ *                 example: 12
+ *               due_date:
+ *                 type: string
+ *                 format: date
+ *                 example: "2026-05-10"
+ *               production_step_id:
+ *                 type: integer
+ *                 description: Current company production step id (`company_production_steps.id`)
+ *                 example: 2
+ *               work_order_steps:
+ *                 type: array
+ *                 description: Ordered steps; each item needs `step_id` (company production step id) and `sequence`. Replaces existing steps only when work order status is Pending.
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - step_id
+ *                     - sequence
+ *                   properties:
+ *                     step_id:
+ *                       type: integer
+ *                       example: 2
+ *                     sequence:
+ *                       type: integer
+ *                       example: 1
+ *           example:
+ *             customer_id: 127375
+ *             product_id: 11
+ *             final_product_variant_id: 16
+ *             planned_qty: 12
+ *             due_date: "2026-05-10"
+ *             production_step_id: 2
+ *             work_order_steps:
+ *               - step_id: 2
+ *                 sequence: 1
+ *               - step_id: 4
+ *                 sequence: 2
+ *               - step_id: 3
+ *                 sequence: 3
+ *               - step_id: 5
+ *                 sequence: 4
+ *               - step_id: 6
+ *                 sequence: 5
+ *     responses:
+ *       200:
+ *         description: Work order updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order updated successfully"
+ *                 data:
+ *                   type: object
+ *                   description: Updated work order row
+ *       400:
+ *         description: Validation error, invalid steps, or cannot replace steps after Pending
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Cannot replace work order steps after the work order has left Pending status"
+ *       404:
+ *         description: Work order not found for this company
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order not found"
  *       500:
  *         description: Internal server error
  *         content:
@@ -681,6 +1005,88 @@
  *                 message:
  *                   type: string
  *                   example: "Error completing material issue"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/production/work-order/complete-production:
+ *   post:
+ *     summary: Mark work order production as completed
+ *     description: |
+ *       Sets the work order `status` to **4** (Completed) for the given `wo_id`, scoped to the authenticated user's company.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wo_id
+ *             properties:
+ *               wo_id:
+ *                 type: integer
+ *                 description: Work order ID
+ *                 example: 2
+ *           example:
+ *             wo_id: 2
+ *     responses:
+ *       200:
+ *         description: Production marked completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production completed successfully"
+ *       400:
+ *         description: Missing or invalid `wo_id`
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "wo_id is required"
+ *       404:
+ *         description: No work order found for this id and company
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error completing production"
  *                 error:
  *                   type: string
  */

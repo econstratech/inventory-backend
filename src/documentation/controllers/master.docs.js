@@ -908,3 +908,80 @@
  *                 message:
  *                   description: Error object/message returned by the controller
  */
+
+/**
+ * @swagger
+ * /api/master/production-steps:
+ *   post:
+ *     summary: Create production step (master + company)
+ *     description: |
+ *       Creates a row in the master production steps table, then creates a matching `CompanyProductionStep`
+ *       for the authenticated user's company (`req.user.company_id`). The master step name must be unique.
+ *     tags: [Master]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Production step name (trimmed). Must be unique across master steps.
+ *                 example: "Cutting"
+ *               description:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Optional description (trimmed). Omit or send empty string if none.
+ *                 example: "Cut raw material as per BOM dimensions"
+ *           example:
+ *             name: "Cutting"
+ *             description: "Cut raw material as per BOM dimensions"
+ *     responses:
+ *       200:
+ *         description: Production step created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production step created successfully"
+ *       400:
+ *         description: Duplicate master step name
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Production step with this name already exists"
+ *       500:
+ *         description: Server error while creating the step
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error creating production step"
+ *                 error:
+ *                   type: string
+ *                   description: Error message from the exception
+ */

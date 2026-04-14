@@ -6,7 +6,10 @@ const {
      CreateCompany, 
      CretaeUserAPi,
      CreateCompanyProductionFlow,
-     GetCompanyProductionFlow
+     GetCompanyProductionFlow,
+     GetCompanyProductionSteps,
+     CreateCompanyProductionStep,
+     DeleteCompanyProductionStep
 } = require("../controller/CompanyManagement");
 const router = express.Router();
 
@@ -17,5 +20,8 @@ router.post('/create-company', authToken, CreateCompany)
 router.post('/create-user-growthh', CretaeUserAPi);
 router.post('/create-company-production-flow', authToken, CreateCompanyProductionFlow);
 router.get('/get-company-production-flow/:id', authToken, GetCompanyProductionFlow);
+router.get('/production-steps/:id', authToken, GetCompanyProductionSteps);
+router.post('/production-steps', authToken, CreateCompanyProductionStep);
+router.delete('/production-steps/:stepId', authToken, DeleteCompanyProductionStep);
 
 module.exports = router;

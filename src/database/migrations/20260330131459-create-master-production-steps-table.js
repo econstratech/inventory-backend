@@ -37,12 +37,66 @@ exports.up = function(db) {
       ('Cutting', 'Cutting into final size', 1, NOW(), NOW()),
       ('Metallization', 'Metallization process', 1, NOW(), NOW()),
       ('Packing', 'Final packing process', 1, NOW(), NOW());
-    `);
+    `)
+    .then(() => {
+      return db.createTable('company_production_steps', {
+        id: { type: 'int', primaryKey: true, autoIncrement: true },
+        master_step_id: { 
+          type: 'int', 
+          notNull: true,
+          foreignKey: {
+            name: 'fk_cps_master_step_id',
+            table: 'production_steps_master',
+            rules: {
+              onDelete: 'CASCADE',
+              onUpdate: 'RESTRICT'
+            },
+            mapping: 'id'
+          },
+        },
+        company_id: { 
+          type: 'bigint', 
+          unsigned: true, 
+          notNull: true,
+          foreignKey: {
+            name: 'fk_cps_company_id',
+            table: 'companies',
+            rules: {
+              onDelete: 'CASCADE',
+              onUpdate: 'RESTRICT'
+            },
+            mapping: 'id'
+          },
+        },
+        master_step_id: { 
+          type: 'int', 
+          notNull: true,
+          foreignKey: {
+            name: 'fk_cps_master_step_id',
+            table: 'production_steps_master',
+            rules: {
+              onDelete: 'CASCADE',
+              onUpdate: 'RESTRICT'
+            },
+            mapping: 'id'
+          },
+        },
+        name: { type: 'string', length: 100, notNull: true },
+        description: { type: 'text', notNull: false },
+        is_active: { type: 'int', notNull: true, defaultValue: 1 },
+        created_at: { type: 'datetime', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },
+        updated_at: { type: 'datetime', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },
+        deleted_at: { type: 'datetime', notNull: false },
+      })
+    })
   })
 };
 
 exports.down = function(db) {
-  return db.dropTable('production_steps_master');
+  return db.dropTable('company_production_steps')
+    .then(() => {
+      return db.dropTable('production_steps_master');
+    });
 };
 
 exports._meta = {

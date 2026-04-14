@@ -35,7 +35,10 @@ exports.up = function(db) {
 };
 
 exports.down = function(db) {
-  return db.removeColumn('master_bom', 'final_product_variant_id');
+  return db.removeForeignKey('master_bom', 'fk_master_bom_final_product_variant')
+    .then(() => {
+      return db.removeColumn('master_bom', 'final_product_variant_id');
+    });
 };
 
 exports._meta = {

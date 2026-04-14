@@ -1,9 +1,9 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
-const WorkOrderMaterialIssue = sequelize.define('work_order_material_issues', {
+const CompanyProductionStep = sequelize.define('company_production_steps', {
     id: {
-        type: DataTypes.BIGINT,
+        type: DataTypes.INTEGER,
         primaryKey: true,
         autoIncrement: true,
     },
@@ -11,29 +11,23 @@ const WorkOrderMaterialIssue = sequelize.define('work_order_material_issues', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
-    wo_id: {
-        type: DataTypes.BIGINT,
+    name: {
+        type: DataTypes.STRING,
         allowNull: false,
     },
-    rm_product_id: {
-        type: DataTypes.BIGINT,
-        allowNull: false,
-    },
-    rm_product_variant_id: {
-        type: DataTypes.BIGINT,
+    description: {
+        type: DataTypes.TEXT,
         allowNull: true,
     },
-    warehouse_id: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
-    },
-    issued_qty: {
+    master_step_id: {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
-    batch_id: {
-        type: DataTypes.BIGINT,
-        allowNull: true,
+    is_active: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+        comment: '1: Active, 0: Inactive',
     },
     created_at: {
         type: DataTypes.DATE,
@@ -45,11 +39,18 @@ const WorkOrderMaterialIssue = sequelize.define('work_order_material_issues', {
         allowNull: false,
         defaultValue: DataTypes.NOW,
     },
+    deleted_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
 }, {
-    tableName: 'work_order_material_issues',
+    tableName: 'company_production_steps',
     timestamps: true,
     createdAt: 'created_at',
-    updatedAt: 'updated_at'
+    updatedAt: 'updated_at',
+    paranoid: true,
+    deletedAt: 'deleted_at',
 });
 
-module.exports = WorkOrderMaterialIssue;
+
+module.exports = CompanyProductionStep;

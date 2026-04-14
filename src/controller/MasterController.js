@@ -5,7 +5,8 @@ const {
     ProductAttribute, 
     ProductCategory,
     MasterBrand,
-    ProductionStepsMaster
+    ProductionStepsMaster,
+    CompanyProductionStep
 } = require('../model');
 const CommonHelper = require("../helpers/commonHelper");
 
@@ -574,5 +575,44 @@ exports.GetProductionSteps = async (req, res) => {
     } catch (error) {
         console.log("Error while getting production steps:", error);
         return res.status(400).json({ status: false, message: error })
+    }
+}
+
+/**
+ * Create a new production step
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.CreateProductionSteps = async (req, res) => {
+    try {
+        const stepName = req.body.name.trim();
+        const stepDescription = req.body.description.trim() ?? null;
+
+        // Check if production step with same name already exists
+        const existingProductionStep = await ProductionStepsMaster.findOne({
+            attributes: ['id'],
+            raw: true,
+            where: { name: stepName },
+        });
+        // If production step with same name already exists, return error
+        if (existingProductionStep) {
+            return res.status(400).json({ status: false, message: "Production step with this name already exists" });
+        }
+        // create a new production step
+        const productionStep = await ProductionStepsMaster.create({ name: stepName, description: stepDescription, is_active: 1 });
+
+        // Create a new company production step
+        await CompanyProductionStep.create({
+            company_id: req.user.company_id,
+            master_step_id: productionStep.id,
+            name: stepName,
+            description: stepDescription,
+            is_active: 1,
+        });
+        // return success response
+        return res.status(200).json({ status: true, message: "Production step created successfully" });
+    } catch (error) {
+        console.error('Error creating production step:', error);
+        return res.status(500).json({ status: false, message: "Error creating production step", error: error.message });
     }
 }

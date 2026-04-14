@@ -37,10 +37,13 @@ exports.up = function(db) {
 };
 
 exports.down = function(db) {
-  return db.removeColumn('work_orders', 'material_issued_by')
-  .then(() => {
-    return db.removeColumn('work_orders', 'material_issued_at');
-  });
+  return db.removeForeignKey('work_orders', 'fk_work_orders_material_issued_by')
+    .then(() => {
+      return db.removeColumn('work_orders', 'material_issued_by');
+    })
+    .then(() => {
+      return db.removeColumn('work_orders', 'material_issued_at');
+    });
 };
 
 exports._meta = {
