@@ -5,7 +5,14 @@ const bcrypt = require('bcrypt');
 
 
 const sequelize = require("../database/db-connection");
-const { GeneralSettings, Company, User, CompanyProductionFlow } = require("../model")
+const { 
+    GeneralSettings, 
+    Company, 
+    User, 
+    CompanyProductionFlow, 
+    CompanyProductionStep,
+    ProductionStepsMaster
+} = require("../model")
 const OfficeTimeModel = require("../model/OfficeTimeModel")
 const NotificationSettingModel = require("../model/NotificationSettingModel")
 const CommonHelper = require("../helpers/commonHelper")
@@ -340,6 +347,35 @@ exports.UserListCompanyWise = async (req, res) => {
 }
 
 /**
+ * Get all production steps
+ * @param {Object} req - request object
+ * @param {Object} res - response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.GetCompanyProductionSteps = async (req, res) => {
+    try {
+        const { id } = req.params;
+        // get all production steps
+        const productionSteps = await CompanyProductionStep.findAll({
+            where: { company_id: id, is_active: 1 },
+            attributes: ['id', 'name', 'description', 'is_active', 'master_step_id'],
+            order: [['id', 'ASC']],
+            raw: true,
+        });
+
+        // return success response
+        return res.status(200).json({
+            status: true,
+            message: 'Production steps fetched successfully',
+            data: productionSteps
+        });
+    } catch (error) {
+        console.log("Error while getting production steps:", error);
+        return res.status(400).json({ status: false, message: error })
+    }
+}
+
+/**
  * Create company production flow
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
@@ -412,5 +448,100 @@ exports.GetCompanyProductionFlow = async (req, res) => {
     } catch (err) {
         console.log("Error while getting company production flow:", err);
         return res.status(400).json({ success: false, message: err })
+    }
+}
+
+/**
+ * Create company production step
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.CreateCompanyProductionStep = async (req, res) => {
+    try {
+        const { company_id, step_id } = req.body;
+        // validate the request body
+        if (!company_id || !step_id) {
+            return res.status(400).json({ success: false, message: "Please fill all field !" })
+        }
+        const [masterStep, step] = await Promise.all([
+            ProductionStepsMaster.findOne({
+                attributes: ['id', 'name', 'description'],
+                where: { id: step_id, is_active: 1 },
+                raw: true,
+            }),
+            CompanyProductionStep.findOne({
+                attributes: ['id', 'name', 'description'],
+                where: { company_id: company_id, master_step_id: step_id },
+                raw: true,
+            })
+        ]);
+        if (!masterStep) {
+            return res.status(400).json({ success: false, message: "Step not found !" })
+        } if (step) {
+            return res.status(400).json({ success: false, message: "Step already exists !" })
+        }
+        // create the company production step
+        await CompanyProductionStep.create({
+            company_id: company_id,
+            master_step_id: step_id,
+            name: step.name,
+            description: step.description,
+            is_active: 1,
+        });
+        // return the success response
+        return res.status(200).json({ success: true, message: "Company production step has been created successfully" })
+    } catch (err) {
+        console.log("Error while creating company production step:", err);
+        return res.status(400).json({ success: false, message: err })
+    }
+}
+
+/**
+ * Soft-delete a company production step (scoped to the authenticated user's company).
+ * Removes related `company_production_flows` rows for this step so flow data stays consistent.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.DeleteCompanyProductionStep = async (req, res) => {
+    let transaction = null;
+    try {
+        const { stepId } = req.params;
+        const company_id = req.user?.company_id;
+        if (!company_id) {
+            return res.status(400).json({ success: false, message: "Company context is required !" });
+        }
+        const id = parseInt(stepId, 10);
+        if (!stepId || Number.isNaN(id)) {
+            return res.status(400).json({ success: false, message: "Valid step ID is required !" });
+        }
+        const step = await CompanyProductionStep.findOne({
+            where: { id, company_id },
+            attributes: ['id'],
+        });
+        if (!step) {
+            return res.status(404).json({ success: false, message: "Production step not found !" });
+        }
+        transaction = await sequelize.transaction();
+        await CompanyProductionFlow.destroy({
+            where: { company_id, step_id: id },
+            transaction,
+        });
+        await CompanyProductionStep.destroy({
+            where: { id, company_id },
+            transaction,
+        });
+        await transaction.commit();
+        return res.status(200).json({
+            success: true,
+            message: "Production step deleted successfully",
+        });
+    } catch (err) {
+        if (transaction) {
+            await transaction.rollback();
+        }
+        console.log("Error while deleting company production step:", err);
+        return res.status(400).json({ success: false, message: err });
     }
 }

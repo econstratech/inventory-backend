@@ -8,7 +8,8 @@ const {
     Warehouse,
     Product,
     ProductVariant,
-    WorkOrderMaterialIssue
+    WorkOrderMaterialIssue,
+    CompanyProductionStep,
 } = require("../model")
 const CommonHelper = require("../helpers/commonHelper");
 
@@ -74,11 +75,27 @@ exports.GetAllWorkOrders = async (req, res) => {
         const page = parseInt(req.query.page, 10) || 1;
         const limit = parseInt(req.query.limit, 10) || 10;
         const offset = (page - 1) * limit;
+
         // search params
         const search = req.query.search || '';
+
         // sort params
-        const sort = req.query.sort || 'created_at';
-        const order = req.query.order || 'desc';
+        let sortParam = req.query.sort || 'created_at';
+        const orderParam = req.query.order || 'desc';
+
+        // convert sort param to array of strings
+        if (sortParam === 'customer_name') {
+            sortParam = ['customer', 'name'];
+        } else if (sortParam === 'product_name') {
+            sortParam = ['product', 'product_name'];
+        } else if (sortParam === 'wo_number') {
+            sortParam = ['wo_number'];
+        } else if (sortParam === 'due_date') {
+            sortParam = ['due_date'];
+        } else if (sortParam === 'created_at') {
+            sortParam = ['created_at'];
+        }
+        
         // base where
         const where = {
             company_id: req.user.company_id,
@@ -134,7 +151,8 @@ exports.GetAllWorkOrders = async (req, res) => {
                 'due_date', 
                 'status',
                 'material_issued_at',
-                'progress_percent', 
+                'progress_percent',
+                'material_issue_percent',
                 'created_at', 
                 'updated_at'
             ],
@@ -142,7 +160,7 @@ exports.GetAllWorkOrders = async (req, res) => {
             limit: limit,
             offset: offset,
             distinct: true,
-            order: [[sort, order], ['workOrderSteps', 'sequence', 'asc']],
+            order: [[...sortParam, orderParam], ['workOrderSteps', 'sequence', 'asc']],
             include: [
                 {
                     association: 'product',
@@ -168,11 +186,15 @@ exports.GetAllWorkOrders = async (req, res) => {
                 },
                 {
                     association: 'workOrderSteps',
-                    attributes: ['id', 'step_id', 'status', 'sequence', 'input_qty', 'output_qty', 'waste_qty', 'yield_percent'],
+                    attributes: ['id', 'step_id', 'status', 'uom_id', 'sequence', 'input_qty', 'output_qty', 'waste_qty', 'yield_percent'],
                     include: [
                         {
                             association: 'step',
                             attributes: ['id', 'name'],
+                        }, 
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label'],
                         }
                     ]
                 },
@@ -195,6 +217,234 @@ exports.GetAllWorkOrders = async (req, res) => {
         return res.status(500).json({ error: error.message || "Internal Server Error" });
     }
 }
+
+/**
+ * Get a work order by ID
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.GetWorkOrderById = async (req, res) => {
+    try {
+        const { wo_id } = req.params;
+        const isVariantBased = req.user.is_variant_based;
+        // check if work order exists
+        const workOrder = await WorkOrder.findOne({
+            attributes: [
+                'id', 
+                'wo_number', 
+                'planned_qty', 
+                'due_date', 
+                'status', 
+                // 'material_issued_at', 
+                // 'progress_percent', 
+                // 'material_issue_percent',
+                // 'created_at',
+                // 'updated_at',
+            ],
+            where: { id: wo_id },
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id', 'product_name', 'product_code'],
+                },
+                {
+                    association: 'workOrderSteps',
+                    attributes: ['id', 'step_id', 'status', 'sequence', 'input_qty', 'output_qty', 'waste_qty', 'yield_percent'],
+                    include: [
+                        {
+                            association: 'step',
+                            attributes: ['id', 'name'],
+                        }
+                    ]
+                },
+                {
+                    association: 'customer',
+                    attributes: ['id', 'name'],
+                },
+                ...(isVariantBased ? [{
+                    association: 'finalProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label'],
+                        }
+                    ]
+                }] : []),
+            ]
+        });
+        // if work order does not exist, return 404
+        if (!workOrder) {
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        }
+        // return the work order
+        return res.status(200).json({ status: true, message: "Work order fetched successfully", data: workOrder });
+    } catch (error) {
+        console.error("Error getting work order by ID:", error);
+        return res.status(500).json({ error: error.message || "Internal Server Error" });
+    }
+}
+
+/**
+ * Update a work order (header fields; replaces `work_order_steps` only while status is Pending)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.UpdateWorkOrder = async (req, res) => {
+    // start a transaction
+    const transaction = await sequelize.transaction();
+    try {
+        // get the work order id
+        const { wo_id } = req.params;
+        // get the user company id
+        const company_id = req.user.company_id;
+        // get the user is variant based
+        const isVariantBased = !!req.user.is_variant_based;
+
+        // get the request body
+        const {
+            customer_id,
+            product_id,
+            final_product_variant_id,
+            planned_qty,
+            due_date,
+            production_step_id,
+            work_order_steps,
+        } = req.body;
+
+        // check if work_order_steps is an array
+        if (work_order_steps !== undefined && !Array.isArray(work_order_steps)) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "work_order_steps must be an array" });
+        }
+        const stepsPayload = work_order_steps ?? [];
+
+        // check if customer_id, product_id, planned_qty, due_date, and production_step_id are provided
+        if (
+            customer_id == null ||
+            product_id == null ||
+            planned_qty == null ||
+            due_date == null ||
+            production_step_id == null
+        ) {
+            await transaction.rollback();
+            return res.status(400).json({
+                status: false,
+                message: "customer_id, product_id, planned_qty, due_date, and production_step_id are required",
+            });
+        }
+
+        // convert the work order id to a number
+        const woIdNum = parseInt(wo_id, 10);
+        // check if the work order id is a number
+        if (Number.isNaN(woIdNum)) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "Invalid work order id" });
+        }
+
+        // check if the work order exists
+        const workOrder = await WorkOrder.findOne({
+            where: { id: woIdNum, company_id },
+            attributes: ["id", "status"],
+            transaction,
+        });
+
+        // check if the work order does not exist
+        if (!workOrder) {
+            await transaction.rollback();
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        }
+
+        // check if the work order steps are provided
+        for (const s of stepsPayload) {
+            // check if the step_id and sequence are provided
+            if (s.step_id == null || s.sequence == null) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    status: false,
+                    message: "Each work order step requires step_id and sequence",
+                });
+            }
+        }
+        // get the step ids to check
+        const stepIdsToCheck = [production_step_id, ...stepsPayload.map((s) => s.step_id)];
+        // get the unique step ids
+        const uniqueStepIds = [...new Set(stepIdsToCheck)];
+        // get the valid steps
+        const validSteps = await CompanyProductionStep.findAll({
+            where: { company_id, id: { [Op.in]: uniqueStepIds }, is_active: 1 },
+            attributes: ["id"],
+            transaction,
+        });
+        // check if the valid steps are the same as the unique step ids, if not then return 400
+        if (validSteps.length !== uniqueStepIds.length) {
+            await transaction.rollback();
+            return res.status(400).json({
+                status: false,
+                message: "Invalid or inactive production step for this company",
+            });
+        }
+
+        if (workOrder.status !== 1 && stepsPayload.length > 0) {
+            await transaction.rollback();
+            return res.status(400).json({
+                status: false,
+                message: "Cannot replace work order steps after the work order has left Pending status",
+            });
+        }
+        // update the work order
+        await WorkOrder.update(
+            {
+                customer_id,
+                product_id,
+                planned_qty,
+                due_date,
+                production_step_id,
+                ...(isVariantBased
+                    ? { final_product_variant_id: final_product_variant_id ?? null }
+                    : { final_product_variant_id: null }),
+            },
+            {
+                where: { id: woIdNum, company_id },
+                transaction,
+            }
+        );
+
+        // check if the work order status is 1, if so then delete the work order steps and create new ones
+        if (workOrder.status === 1) {
+            // delete the work order steps
+            await WorkOrderStep.destroy({ where: { wo_id: woIdNum }, transaction });
+            // check if the steps payload is not empty, if so then create new work order steps
+            if (stepsPayload.length > 0) {
+                // create the work order steps
+                const rows = stepsPayload.map((step) => ({
+                    wo_id: woIdNum,
+                    step_id: step.step_id,
+                    sequence: step.sequence,
+                }));
+                await WorkOrderStep.bulkCreate(rows, { transaction });
+            }
+        }
+
+        // commit the transaction
+        await transaction.commit();
+
+        return res.status(200).json({
+            status: true,
+            message: "Work order updated successfully"
+        });
+    } catch (error) {
+        // rollback the transaction if exists
+        if (transaction) {
+            await transaction.rollback();
+        }
+        // return error response
+        console.error("Error updating work order:", error);
+        return res.status(500).json({ status: false, message: "Error updating work order", error: error.message });
+    }
+};
 
 /**
  * Delete a work order
@@ -252,7 +502,7 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
             include: [
                 {
                     association: 'workOrderMaterialIssues',
-                    attributes: ['id', 'rm_product_id', 'rm_product_variant_id', 'issued_qty'],
+                    attributes: ['id', 'rm_product_id', 'rm_product_variant_id', 'issued_qty', 'batch_id', 'warehouse_id'],
                 }
             ]
         });
@@ -273,7 +523,8 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
                     }
                 ]
             });
-            fg_uom = finalProductVariant?.masterUOM;
+            const fgUOM = finalProductVariant?.masterUOM.dataValues;
+            fg_uom = { ...fgUOM, weight_per_unit: finalProductVariant.weight_per_unit };
         } else {
             const finalProduct = await Product.findOne({
                 attributes: ['id', 'uom_id'],
@@ -285,7 +536,9 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
                     }
                 ],
             });
-            fg_uom = finalProduct?.masterUOM;
+            const fgUOM = finalProduct?.masterUOM.dataValues;
+
+            fg_uom = { ...fgUOM, weight_per_unit: 1 };
         }
 
         // get the raw material stores
@@ -314,12 +567,19 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
                             association: 'productStockEntries',
                             attributes: ['id', 'quantity'],
                             where: { warehouse_id: { [Op.in]: rm_store_ids } },
+                            include: [
+                                {
+                                    association: 'warehouse',
+                                    attributes: ['id', 'name'],
+                                }
+                            ]
                         }] : []),
                     ]
                 },
                 {
                     association: 'rawMaterialProductVariant',
                     attributes: ['id', 'weight_per_unit'],
+                    required: false,
                     include: [
                         {
                             association: 'masterUOM',
@@ -328,7 +588,14 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
                         ...(isVariantBased ? [{
                             association: 'productStockEntries',
                             attributes: ['id', 'quantity'],
+                            required: false,
                             where: { warehouse_id: { [Op.in]: rm_store_ids } },
+                            include: [
+                                {
+                                    association: 'warehouse',
+                                    attributes: ['id', 'name'],
+                                }
+                            ]
                         }] : []),
                     ]
                 }
@@ -360,10 +627,23 @@ exports.GetBOMListForWorkOrder = async (req, res) => {
 exports.CreateMaterialIssue = async (req, res) => {
     const transaction = await sequelize.transaction();
     try {
-        const { wo_id, rm_product_id, rm_product_variant_id, issued_qty, batch_id } = req.body;
+        const { 
+            wo_id, 
+            rm_product_id, 
+            rm_product_variant_id, 
+            issued_qty, 
+            batch_id,
+            warehouse_id,
+            fg_uom,
+            rm_uom,
+            fg_weight_per_unit,
+            rm_weight_per_unit
+        } = req.body;
+
+        const isVariantBased = req.user.is_variant_based;
         // check if work order exists
         const workOrder = await WorkOrder.findOne({
-            attributes: ['id'],
+            attributes: ['id', 'planned_qty', 'status'],
             raw: true,
             where: { id: wo_id },
         });
@@ -372,21 +652,48 @@ exports.CreateMaterialIssue = async (req, res) => {
             return res.status(404).json({ status: false, message: "Work order not found" });
         }
 
-        // check if the material issue already exists
-        const workOrderMaterialIssue = await WorkOrderMaterialIssue.findOne({
-            attributes: ['id'],
-            raw: true,
-            where: { 
-                wo_id: wo_id, 
-                rm_product_id: rm_product_id, 
-                ...(rm_product_variant_id ? { rm_product_variant_id: rm_product_variant_id } : {}),
-            },
-        });
+        const [workOrderMaterialIssue, totalIssuedQty] = await Promise.all([
+            // check if the material issue already exists
+            WorkOrderMaterialIssue.findOne({
+                attributes: ['id'],
+                raw: true,
+                transaction,
+                where: { 
+                    wo_id: wo_id, 
+                    rm_product_id: rm_product_id, 
+                    ...(rm_product_variant_id ? { rm_product_variant_id: rm_product_variant_id } : {}),
+                    ...(warehouse_id ? { warehouse_id: warehouse_id } : {}),
+                },
+            }),
+            // get the total issued quantity
+            WorkOrderMaterialIssue.sum('issued_qty', {
+                where: { wo_id: wo_id },
+                transaction,
+            })
+        ]);
+
+        // calculate the material issue percentage
+        let materialIssuePercent = 0;
+        const workOrderPayload = {};
+
+        if (isVariantBased && rm_product_variant_id) {
+            const palnnedUnitsQty = fg_uom === 'kg' ? Number(workOrder.planned_qty) * fg_weight_per_unit * 1000 : Number(workOrder.planned_qty) * fg_weight_per_unit;
+            const totalIssuedUnitsQty = rm_uom === 'kg' ? (Number(totalIssuedQty) + Number(issued_qty)) * rm_weight_per_unit * 1000 : (Number(totalIssuedQty) + Number(issued_qty)) * rm_weight_per_unit;
+            materialIssuePercent = Math.ceil((totalIssuedUnitsQty / palnnedUnitsQty) * 100);
+
+        } else {
+            materialIssuePercent = ((Number(totalIssuedQty) + Number(issued_qty)) / Number(workOrder.planned_qty)) * 100;
+        }
+
+        workOrderPayload.material_issue_percent = materialIssuePercent;
+
+
         // if the material issue already exists, then update the material issue
         if (workOrderMaterialIssue) {
             await WorkOrderMaterialIssue.update({
                 issued_qty: issued_qty,
                 batch_id: batch_id || null,
+                warehouse_id: warehouse_id || null,
             }, {
                 where: { id: workOrderMaterialIssue.id },
                 transaction 
@@ -400,16 +707,20 @@ exports.CreateMaterialIssue = async (req, res) => {
                 rm_product_variant_id: rm_product_variant_id || null,
                 issued_qty: issued_qty,
                 batch_id: batch_id || null,
+                warehouse_id: warehouse_id || null,
             }, { transaction });
 
-            // update the work order status to in-progress
-            await WorkOrder.update({
-                status: 2, // 2: In-Progress
-            }, {
-                where: { id: wo_id },
-                transaction,
-            });
+            // update the work order status to in-progress if it's in pending status
+            if (workOrder.status === 1) {
+                workOrderPayload.status = 2; // 2: In-Progress
+            }
         }
+
+        // update the work order
+        await WorkOrder.update(workOrderPayload, {
+            where: { id: wo_id },
+            transaction,
+        });
 
         // commit the transaction
         await transaction.commit();
@@ -434,6 +745,7 @@ exports.CompleteMaterialIssue = async (req, res) => {
         const { wo_id } = req.body;
         await WorkOrder.update({
             status: 3, // 3: Material Issued
+            // material_issue_percent: 100, // 100% material issued when material issue is completed
             material_issued_by: req.user.id,
             material_issued_at: new Date(),
         }, {
@@ -458,7 +770,7 @@ exports.CompleteMaterialIssue = async (req, res) => {
 exports.SaveProductionData = async (req, res) => {
     try {
         // validate the input and output quantities
-        const { wo_id, wo_step_id, input_qty, output_qty, status } = req.body;
+        const { wo_id, wo_step_id, input_qty, output_qty, uom_id, status } = req.body;
         if (!input_qty || !output_qty) {
             return res.status(400).json({ status: false, message: "Input quantity and output quantity are required" });
         } else if (input_qty < 0 || output_qty < 0) {
@@ -469,7 +781,7 @@ exports.SaveProductionData = async (req, res) => {
 
         // check if the work order is exist, if not then return 404
         const workOrder = await WorkOrder.findOne({
-            attributes: ['id', 'production_step_id'],
+            attributes: ['id', 'production_step_id', 'planned_qty'],
             raw: true,
             where: { id: wo_id },
         });
@@ -506,6 +818,7 @@ exports.SaveProductionData = async (req, res) => {
 
         // update the work order step
         await WorkOrderStep.update({
+            uom_id: uom_id,
             input_qty: input_qty,
             output_qty: output_qty,
             waste_qty: waste_qty,
@@ -516,17 +829,27 @@ exports.SaveProductionData = async (req, res) => {
         });
 
         // calculate the progress percentage
-        const [totalSteps, totalStepsCompleted] = await Promise.all([
+        const [totalSteps, totalStepsCompleted, totalOutputQty] = await Promise.all([
             WorkOrderStep.count({
                 where: { wo_id: wo_id },
             }),
             WorkOrderStep.count({
                 where: { wo_id: wo_id, status: 3 },
             }),
+            WorkOrderStep.sum('output_qty', {
+                where: { wo_id: wo_id },
+            }),
         ]);
 
-        // calculate the progress percentage
-        const progress_percent = (totalStepsCompleted / totalSteps) * 100;
+        // Hybrid progress = average of step completion % and quantity completion %.
+        const stepBasedProgress = totalSteps > 0 ? (totalStepsCompleted / totalSteps) * 100 : 0;
+        const plannedQty = Number(workOrder.planned_qty) || 0;
+        const quantityBasedProgress = plannedQty > 0
+            ? ((Number(totalOutputQty) || 0) / plannedQty) * 100
+            : 0;
+        const progress_percent = Number(
+            Math.min(100, (stepBasedProgress + quantityBasedProgress) / 2).toFixed(2)
+        );
 
         // update the work order progress percentage
         await WorkOrder.update({
@@ -544,3 +867,43 @@ exports.SaveProductionData = async (req, res) => {
         return res.status(400).json({ status: false, message: "Error saving production data", error: error.message });
     }
 }
+
+/**
+ * Mark a work order as production completed (status 4)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.CompleteProduction = async (req, res) => {
+    try {
+        const { wo_id } = req.body;
+        if (wo_id == null || wo_id === "") {
+            return res.status(400).json({ status: false, message: "wo_id is required" });
+        }
+        const id = parseInt(wo_id, 10);
+        if (Number.isNaN(id)) {
+            return res.status(400).json({ status: false, message: "Invalid wo_id" });
+        }
+
+        await WorkOrder.update(
+            { 
+                status: 4, 
+                production_completed_at: new Date(),
+                production_completed_by: req.user.id,
+            },
+            { where: { id, company_id: req.user.company_id } }
+        );
+
+        return res.status(200).json({
+            status: true,
+            message: "Production completed successfully",
+        });
+    } catch (error) {
+        console.error("Error completing production:", error);
+        return res.status(500).json({
+            status: false,
+            message: "Error completing production",
+            error: error.message,
+        });
+    }
+};

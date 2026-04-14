@@ -36,7 +36,7 @@ exports.up = function(db) {
       notNull: true,
       foreignKey: {
         name: 'fk_cpf_step_id',
-        table: 'production_steps_master',
+        table: 'company_production_steps',
         rules: {
           onDelete: 'CASCADE',
           onUpdate: 'RESTRICT'

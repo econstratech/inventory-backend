@@ -58,6 +58,19 @@ const WorkOrder = sequelize.define('work_orders', {
         allowNull: false,
         defaultValue: 0,
     },
+    material_issue_percent: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
+    production_completed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
+    production_completed_by: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     created_at: {
         type: DataTypes.DATE,
         allowNull: false,
