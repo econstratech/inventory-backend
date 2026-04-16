@@ -300,15 +300,63 @@
  *         name: store_type
  *         schema:
  *           type: string
- *         description: store type
+ *         description: Filter by store type (e.g. "Raw Material", "Finished Goods")
  *       - in: query
  *         name: searchkey
  *         schema:
  *           type: string
- *         description: Serch key
+ *         description: Search by store name, city, or pin code
+ *       - in: query
+ *         name: cwhfg
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: When "true", only return finished goods stores (is_fg_store = 1)
  *     responses:
  *       200:
  *         description: List of warehouses
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                         example: 7
+ *                       name:
+ *                         type: string
+ *                         example: "Main Warehouse"
+ *                       location:
+ *                         type: string
+ *                         nullable: true
+ *                         example: "Sector 5"
+ *                       pin:
+ *                         type: string
+ *                         example: "700150"
+ *                       city:
+ *                         type: string
+ *                         example: "Kolkata"
+ *                       store_type:
+ *                         type: string
+ *                         example: "Raw Material"
+ *                       is_fg_store:
+ *                         type: integer
+ *                         description: 1 = finished goods store, 0 = not
+ *                         example: 0
+ *                       is_rm_store:
+ *                         type: integer
+ *                         description: 1 = raw material store, 0 = not
+ *                         example: 1
+ *       400:
+ *         description: Bad request
  */
 
 /**

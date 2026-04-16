@@ -512,7 +512,7 @@ exports.UpdateStore = async (req, res) => {
 
 exports.GetAllStores = async (req, res) => {
     try {
-        const { store_type, searchkey } = req.query;
+        const { store_type, searchkey, cwhfg } = req.query;
         const where = {
             company_id: req.user.company_id,
             ...(store_type && { store_type })
@@ -525,6 +525,10 @@ exports.GetAllStores = async (req, res) => {
                 { city: { [Op.like]: `%${searchkey}%` } },
                 { pin: { [Op.like]: `%${searchkey}%` } }
             ];
+        }
+
+        if (cwhfg === 'true') {
+            where.is_fg_store = 1;
         }
 
         const allStores = await Warehouse.findAll({
