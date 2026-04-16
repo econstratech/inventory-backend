@@ -24,6 +24,7 @@
  *             type: object
  *             required:
  *               - customer_id
+ *               - warehouse_id
  *               - product_id
  *               - planned_qty
  *               - due_date
@@ -33,6 +34,10 @@
  *                 type: integer
  *                 description: Customer ID
  *                 example: 125
+ *               warehouse_id:
+ *                 type: integer
+ *                 description: Warehouse/store ID (finished goods store)
+ *                 example: 10
  *               product_id:
  *                 type: integer
  *                 description: Product ID
@@ -73,6 +78,7 @@
  *                       example: 1
  *           example:
  *             customer_id: 125
+ *             warehouse_id: 10
  *             product_id: 12234
  *             planned_qty: 80
  *             due_date: "2026-03-31"
@@ -261,6 +267,11 @@
  *                           planned_qty:
  *                             type: number
  *                             example: 80
+ *                           final_qty:
+ *                             type: number
+ *                             nullable: true
+ *                             description: Final produced quantity (set when production is completed)
+ *                             example: 75
  *                           due_date:
  *                             type: string
  *                             format: date
@@ -307,6 +318,17 @@
  *                               name:
  *                                 type: string
  *                                 example: "ABC Retail Pvt Ltd"
+ *                           warehouse:
+ *                             type: object
+ *                             nullable: true
+ *                             description: Finished goods warehouse/store
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                                 example: 10
+ *                               name:
+ *                                 type: string
+ *                                 example: "Main Warehouse"
  *                           productionStep:
  *                             type: object
  *                             nullable: true
@@ -427,6 +449,10 @@
  *                     wo_number:
  *                       type: string
  *                       example: "WO123456"
+ *                     warehouse_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       example: 10
  *                     planned_qty:
  *                       type: number
  *                       example: 80
@@ -461,6 +487,20 @@
  *                         name:
  *                           type: string
  *                           example: "ABC Retail Pvt Ltd"
+ *                     warehouse:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Finished goods warehouse/store
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 10
+ *                         name:
+ *                           type: string
+ *                           example: "Main Warehouse"
+ *                         city:
+ *                           type: string
+ *                           example: "Kolkata"
  *                     workOrderSteps:
  *                       type: array
  *                       items:
@@ -552,7 +592,7 @@
  *     summary: Update a work order
  *     description: |
  *       Updates customer, product, planned quantity, due date, current production step (`production_step_id` = `company_production_steps.id`), and optional `final_product_variant_id` when JWT `is_variant_based` is truthy (otherwise `final_product_variant_id` is cleared).
- *       **`work_order_steps`** is replaced (soft-deleted and re-created) only when the work order **`status` is `1` (Pending)**. If the work order has moved past Pending, omit `work_order_steps` or send an empty array to update header fields only; sending a non-empty list returns **400**.
+ *       **`work_order_steps`** is replaced (soft-deleted and re-created) only when the work order **`status` is `1` (Pending)**. If the work order has moved past Pending, the same steps (unchanged `step_id` + `sequence`) may be sent to allow header-only updates; sending changed steps returns **400**.
  *       All `step_id` values (including `production_step_id`) must refer to **active** company production steps for the authenticated user's company.
  *     tags: [Production]
  *     security:
@@ -581,6 +621,10 @@
  *               customer_id:
  *                 type: integer
  *                 example: 127375
+ *               warehouse_id:
+ *                 type: integer
+ *                 description: Warehouse/store ID (finished goods store)
+ *                 example: 10
  *               product_id:
  *                 type: integer
  *                 example: 11
@@ -617,6 +661,7 @@
  *                       example: 1
  *           example:
  *             customer_id: 127375
+ *             warehouse_id: 10
  *             product_id: 11
  *             final_product_variant_id: 16
  *             planned_qty: 12
@@ -1015,7 +1060,7 @@
  *   post:
  *     summary: Mark work order production as completed
  *     description: |
- *       Sets the work order `status` to **4** (Completed) for the given `wo_id`, scoped to the authenticated user's company.
+ *       Sets the work order `status` to **4** (Completed), stores `final_qty`, records `production_completed_at` and `production_completed_by` for the given `wo_id`, scoped to the authenticated user's company.
  *     tags: [Production]
  *     security:
  *       - bearerAuth: []
@@ -1027,13 +1072,19 @@
  *             type: object
  *             required:
  *               - wo_id
+ *               - final_qty
  *             properties:
  *               wo_id:
  *                 type: integer
  *                 description: Work order ID
  *                 example: 2
+ *               final_qty:
+ *                 type: number
+ *                 description: Final produced quantity (must not exceed planned quantity)
+ *                 example: 22
  *           example:
  *             wo_id: 2
+ *             final_qty: 22
  *     responses:
  *       200:
  *         description: Production marked completed successfully
@@ -1173,4 +1224,380 @@
  *                   example: "Input quantity and output quantity are required"
  *                 error:
  *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/production/dispatch/stats:
+ *   get:
+ *     summary: Get dispatch statistics
+ *     description: |
+ *       Returns aggregated counts and totals for completed work orders (status = 4) grouped by dispatch status.
+ *       Supports filtering by due date range and customer.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: due_date_start
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter due dates from this date (inclusive)
+ *         example: "2026-01-01"
+ *       - in: query
+ *         name: due_date_end
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter due dates up to this date (inclusive)
+ *         example: "2026-12-31"
+ *       - in: query
+ *         name: customer_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by customer ID
+ *     responses:
+ *       200:
+ *         description: Dispatch stats fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Dispatch stats fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       description: Total completed work orders
+ *                       example: 25
+ *                     pending:
+ *                       type: integer
+ *                       description: Work orders with dispatch_status = 0 (not yet dispatched)
+ *                       example: 10
+ *                     in_transit:
+ *                       type: integer
+ *                       description: Work orders with dispatch_status = 1 (partially completed)
+ *                       example: 8
+ *                     completed:
+ *                       type: integer
+ *                       description: Work orders with dispatch_status = 2 (fully completed)
+ *                       example: 7
+ *                     qty_out:
+ *                       type: number
+ *                       description: Total dispatched quantity across all dispatch logs
+ *                       example: 350
+ *                     qty_delivered:
+ *                       type: number
+ *                       description: Dispatched quantity for fully completed dispatches only
+ *                       example: 200
+ *                     work_orders:
+ *                       type: integer
+ *                       description: Count of distinct work orders that have dispatch logs
+ *                       example: 15
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/production/dispatch:
+ *   get:
+ *     summary: Get dispatch list (completed work orders)
+ *     description: |
+ *       Returns paginated list of completed work orders (status = 4) for dispatch management.
+ *       Includes customer, product, warehouse, and production completion details.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Records per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by wo_number, customer name, or product name
+ *       - in: query
+ *         name: sort_by
+ *         schema:
+ *           type: string
+ *           default: created_at
+ *           enum: [created_at, wo_number, customer_name, product_name]
+ *         description: Sort field
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *           default: DESC
+ *         description: Sort direction
+ *       - in: query
+ *         name: due_date_start
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter due dates from this date (inclusive)
+ *         example: "2026-01-01"
+ *       - in: query
+ *         name: due_date_end
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter due dates up to this date (inclusive)
+ *         example: "2026-12-31"
+ *       - in: query
+ *         name: customer_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by customer ID
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: integer
+ *           enum: [0, 1, 2]
+ *         description: Filter by dispatch status (0 = Pending, 1 = Partially Completed, 2 = Fully Completed)
+ *     responses:
+ *       200:
+ *         description: Dispatch list fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Dispatch list fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                         total_pages:
+ *                           type: integer
+ *                         current_page:
+ *                           type: integer
+ *                         per_page:
+ *                           type: integer
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                           wo_number:
+ *                             type: string
+ *                           planned_qty:
+ *                             type: number
+ *                           final_qty:
+ *                             type: number
+ *                             nullable: true
+ *                           due_date:
+ *                             type: string
+ *                             format: date
+ *                           dispatch_status:
+ *                             type: integer
+ *                             description: "0 = Pending, 1 = Partially Completed, 2 = Fully Completed"
+ *                           customer:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
+ *                           product:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               product_name:
+ *                                 type: string
+ *                               product_code:
+ *                                 type: string
+ *                           warehouse:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
+ *                           productionCompletedBy:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/production/dispatch/{wo_id}:
+ *   post:
+ *     summary: Dispatch a work order
+ *     description: |
+ *       Records a dispatch entry for a completed work order. Creates a log in WorkOrderDispatchLog and updates the work order's `dispatch_status`.
+ *       When `dispatch_status` is set to `2` (Fully Completed), the finished goods stock is updated in ProductStockEntry for the work order's warehouse.
+ *       Returns 400 if the work order is already fully dispatched.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: wo_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Work order ID
+ *         example: 123
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dispatched_qty
+ *               - dispatch_status
+ *             properties:
+ *               dispatched_qty:
+ *                 type: number
+ *                 description: Quantity being dispatched (must not exceed final_qty)
+ *                 example: 15
+ *               dispatch_status:
+ *                 type: integer
+ *                 description: "1 = Partial Dispatch, 2 = Fully Dispatched"
+ *                 enum: [1, 2]
+ *                 example: 1
+ *               dispatch_note:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Optional dispatch remarks
+ *                 example: "First batch shipped via courier"
+ *           example:
+ *             dispatched_qty: 15
+ *             dispatch_status: 1
+ *             dispatch_note: "First batch shipped via courier"
+ *     responses:
+ *       200:
+ *         description: Work order dispatched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order dispatched successfully"
+ *       400:
+ *         description: Work order already fully dispatched
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order already fully dispatched"
+ *       404:
+ *         description: Work order not found
+ *       500:
+ *         description: Server error
+ */
+
+/**
+ * @swagger
+ * /api/production/dispatch-history/{wo_id}:
+ *   get:
+ *     summary: Get dispatch history for a work order
+ *     description: Returns all dispatch log entries for a given work order, ordered by most recent first.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: wo_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Work order ID
+ *         example: 123
+ *     responses:
+ *       200:
+ *         description: Dispatch logs fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order dispatch logs fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       dispatched_qty:
+ *                         type: number
+ *                         example: 15
+ *                       dispatch_note:
+ *                         type: string
+ *                         nullable: true
+ *                         example: "First batch shipped"
+ *                       dispatched_by:
+ *                         type: integer
+ *                       dispacthed_at:
+ *                         type: string
+ *                         format: date-time
+ *                       dispatchedBy:
+ *                         type: object
+ *                         nullable: true
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                           name:
+ *                             type: string
+ *                             example: "Sumit"
+ *       500:
+ *         description: Server error
  */

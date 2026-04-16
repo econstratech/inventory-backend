@@ -9,7 +9,11 @@ const {
     SaveProductionData,
     GetWorkOrderById,
     UpdateWorkOrder,
-    CompleteProduction
+    CompleteProduction,
+    GetDispatchList,
+    GetDispatchStats,
+    dispatchWorkOrder,
+    GetDispatchHistory
 } = require("../controller/ProductionController");
 const { authToken } = require("../utils/Middleware");
 // const uploadsproduction  = require("../utils/uploads.production");
@@ -28,5 +32,11 @@ router.post('/work-order/material-issue', authToken, CreateMaterialIssue);
 router.post('/work-order/material-issue-complete', authToken, CompleteMaterialIssue);
 router.post('/work-order/save-production-data', authToken, SaveProductionData);
 router.post('/work-order/complete-production', authToken, CompleteProduction);
+
+// Production dispatch routes
+router.get('/dispatch', authToken, GetDispatchList);
+router.get('/dispatch/stats', authToken, GetDispatchStats);
+router.post('/dispatch/:wo_id', authToken, dispatchWorkOrder);
+router.get('/dispatch-history/:wo_id', authToken, GetDispatchHistory);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-const { Op } = require("sequelize")
+const { Op, where } = require("sequelize")
 const sequelize = require("../database/db-connection");
 
 const {
@@ -10,8 +10,10 @@ const {
     ProductVariant,
     WorkOrderMaterialIssue,
     CompanyProductionStep,
+    ProductStockEntry,
 } = require("../model")
 const CommonHelper = require("../helpers/commonHelper");
+const WorkOrderDispatchLog = require("../model/WorkOrderDispatchLog");
 
 /**
  * Create a new work order
@@ -42,6 +44,21 @@ exports.CreateWorkOrder = async (req, res) => {
                 sequence: step.sequence,
             }));
             await WorkOrderStep.bulkCreate(workOrderSteps, { transaction });
+        }
+
+        // if warehouse_id is provided then update the inventory_at_production in product stock entery
+        if (wo_payload.warehouse_id) {
+            await ProductStockEntry.update({
+                inventory_at_production: wo_payload.planned_qty
+            },
+            { 
+                where: { 
+                    product_id: wo_payload.product_id, 
+                    warehouse_id: wo_payload.warehouse_id,
+                    ...(wo_payload.final_product_variant_id ? { product_variant_id: wo_payload.final_product_variant_id } : {}), 
+                }, 
+                transaction 
+            });
         }
 
         // commit the transaction
@@ -147,7 +164,8 @@ exports.GetAllWorkOrders = async (req, res) => {
             attributes: [
                 'id', 
                 'wo_number', 
-                'planned_qty', 
+                'planned_qty',
+                'final_qty', 
                 'due_date', 
                 'status',
                 'material_issued_at',
@@ -178,6 +196,10 @@ exports.GetAllWorkOrders = async (req, res) => {
                 }] : []),
                 {
                     association: 'customer',
+                    attributes: ['id', 'name'],
+                },
+                {
+                    association: 'warehouse',
                     attributes: ['id', 'name'],
                 },
                 {
@@ -231,13 +253,14 @@ exports.GetWorkOrderById = async (req, res) => {
         // check if work order exists
         const workOrder = await WorkOrder.findOne({
             attributes: [
-                'id', 
-                'wo_number', 
-                'planned_qty', 
-                'due_date', 
-                'status', 
-                // 'material_issued_at', 
-                // 'progress_percent', 
+                'id',
+                'wo_number',
+                'warehouse_id',
+                'planned_qty',
+                'due_date',
+                'status',
+                // 'material_issued_at',
+                // 'progress_percent',
                 // 'material_issue_percent',
                 // 'created_at',
                 // 'updated_at',
@@ -261,6 +284,10 @@ exports.GetWorkOrderById = async (req, res) => {
                 {
                     association: 'customer',
                     attributes: ['id', 'name'],
+                },
+                {
+                    association: 'warehouse',
+                    attributes: ['id', 'name', 'city'],
                 },
                 ...(isVariantBased ? [{
                     association: 'finalProductVariant',
@@ -308,6 +335,7 @@ exports.UpdateWorkOrder = async (req, res) => {
             customer_id,
             product_id,
             final_product_variant_id,
+            warehouse_id,
             planned_qty,
             due_date,
             production_step_id,
@@ -349,6 +377,12 @@ exports.UpdateWorkOrder = async (req, res) => {
             where: { id: woIdNum, company_id },
             attributes: ["id", "status"],
             transaction,
+            include: [
+                {
+                    association: 'workOrderSteps',
+                    attributes: ['id', 'sequence', 'step_id'],
+                }
+            ]
         });
 
         // check if the work order does not exist
@@ -387,7 +421,18 @@ exports.UpdateWorkOrder = async (req, res) => {
             });
         }
 
-        if (workOrder.status !== 1 && stepsPayload.length > 0) {
+        // Check if steps have actually changed (compare step_id + sequence)
+        const existingSteps = (workOrder.workOrderSteps || [])
+            .map((s) => `${s.step_id}:${s.sequence}`)
+            .sort()
+            .join(",");
+        const incomingSteps = stepsPayload
+            .map((s) => `${s.step_id}:${s.sequence}`)
+            .sort()
+            .join(",");
+        const stepsChanged = existingSteps !== incomingSteps;
+
+        if (workOrder.status !== 1 && stepsChanged) {
             await transaction.rollback();
             return res.status(400).json({
                 status: false,
@@ -402,6 +447,7 @@ exports.UpdateWorkOrder = async (req, res) => {
                 planned_qty,
                 due_date,
                 production_step_id,
+                warehouse_id,
                 ...(isVariantBased
                     ? { final_product_variant_id: final_product_variant_id ?? null }
                     : { final_product_variant_id: null }),
@@ -876,7 +922,7 @@ exports.SaveProductionData = async (req, res) => {
  */
 exports.CompleteProduction = async (req, res) => {
     try {
-        const { wo_id } = req.body;
+        const { wo_id, final_qty = 0 } = req.body;
         if (wo_id == null || wo_id === "") {
             return res.status(400).json({ status: false, message: "wo_id is required" });
         }
@@ -887,7 +933,8 @@ exports.CompleteProduction = async (req, res) => {
 
         await WorkOrder.update(
             { 
-                status: 4, 
+                status: 4,
+                final_qty,
                 production_completed_at: new Date(),
                 production_completed_by: req.user.id,
             },
@@ -907,3 +954,392 @@ exports.CompleteProduction = async (req, res) => {
         });
     }
 };
+
+/**
+ * Get dispatch list (completed work orders)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.GetDispatchList = async (req, res) => {
+    try {
+        const { 
+            page = 1, 
+            limit = 10,
+            dispatch_status,
+            search = "", 
+            sort_by = "created_at", 
+            order = "DESC" 
+        } = req.query;
+        const offset = (page - 1) * limit;
+
+        // Build sort parameter
+        const orderParam = order.toUpperCase() === "ASC" ? "ASC" : "DESC";
+        let sortParam = [];
+        if (sort_by === "wo_number") {
+            sortParam = ['wo_number'];
+        } else if (sort_by === "customer_name") {
+            sortParam = [{ model: Customer, as: 'customer' }, 'name'];
+        } else if (sort_by === "product_name") {
+            sortParam = [{ model: Product, as: 'product' }, 'product_name'];
+        } else {
+            sortParam = ['created_at'];
+        }
+
+        const where = {
+            company_id: req.user.company_id,
+            status: 4, // Only fetch completed work orders for dispatch
+        };
+
+        // if search query is provided then add it to the where clause
+        if (search) {
+            where[Op.or] = [
+                { wo_number: { [Op.like]: `%${search}%` } },
+                { '$customer.name$': { [Op.like]: `%${search}%` } },
+                { '$product.product_name$': { [Op.like]: `%${search}%` } },
+            ];
+        }
+        // if due_date range filter is provided then add it to the where clause
+        if (req.query.due_date_start && req.query.due_date_end) {
+            where.due_date = {
+                [Op.between]: [new Date(req.query.due_date_start), new Date(req.query.due_date_end + "T23:59:59.999Z")],
+            };
+        } else if (req.query.due_date_start) {
+            where.due_date = {
+                [Op.gte]: new Date(req.query.due_date_start),
+            };
+        } else if (req.query.due_date_end) {
+            where.due_date = {
+                [Op.lte]: new Date(req.query.due_date_end + "T23:59:59.999Z"),
+            };
+        }
+
+        if (dispatch_status !== undefined && dispatch_status !== "") {
+            where.dispatch_status = parseInt(dispatch_status, 10);
+        }
+
+        const isVariantBased = req.user.is_variant_based;
+
+        // fetch the work orders with pagination, sorting, and searching
+        const workOrders = await WorkOrder.findAndCountAll({
+            where,
+            attributes: [
+                'id',
+                'wo_number',
+                'planned_qty',
+                'final_qty',
+                'due_date',
+                'status',
+                'created_at',
+                'production_completed_by',
+                'dispatch_status',
+                [
+                    sequelize.literal(`(SELECT COALESCE(SUM(dispatched_qty), 0) FROM work_order_dispatch_logs WHERE work_order_dispatch_logs.work_order_id = work_orders.id)`),
+                    'total_dispatched_qty'
+                ],
+            ],
+            order: [[...sortParam, orderParam]],
+            offset,
+            limit: parseInt(limit),
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id', 'product_name', 'product_code'],
+                },
+                ...(isVariantBased ? [{
+                    association: 'finalProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label'],
+                        }
+                    ]
+                }] : []),
+                {
+                    association: 'customer',
+                    attributes: ['id', 'name'],
+                },
+                {
+                    association: 'warehouse',
+                    attributes: ['id', 'name'],
+                },
+                {
+                    association: 'productionCompletedBy',
+                    attributes: ['id', 'name'],
+                }
+            ],
+        });
+
+        // get paginated data
+        const paginatedData = CommonHelper.paginate(workOrders, page, limit);
+
+        // return the work orders with pagination
+        return res.status(200).json({
+            status: true,
+            message: "Dispatch list fetched successfully",
+            data: paginatedData
+        });
+    } catch (error) {
+        console.error("Error getting dispatch list:", error);
+        return res.status(500).json({ status: false, message: "Error getting dispatch list", error: error.message });
+    }
+}
+
+/**
+ * Get dispatch stats (counts and totals for completed work orders)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.GetDispatchStats = async (req, res) => {
+    try {
+        const company_id = req.user.company_id;
+
+        const where = {
+            company_id,
+            status: 4, // Only completed work orders
+        };
+
+        // due_date range filter
+        if (req.query.due_date_start && req.query.due_date_end) {
+            where.due_date = {
+                [Op.between]: [new Date(req.query.due_date_start), new Date(req.query.due_date_end + "T23:59:59.999Z")],
+            };
+        } else if (req.query.due_date_start) {
+            where.due_date = { [Op.gte]: new Date(req.query.due_date_start) };
+        } else if (req.query.due_date_end) {
+            where.due_date = { [Op.lte]: new Date(req.query.due_date_end + "T23:59:59.999Z") };
+        }
+
+        // customer filter
+        if (req.query.customer_id) {
+            where.customer_id = req.query.customer_id;
+        }
+
+        // Count by dispatch_status
+        const statusCounts = await WorkOrder.findAll({
+            where,
+            attributes: [
+                'dispatch_status',
+                [sequelize.fn('COUNT', sequelize.col('work_orders.id')), 'count'],
+            ],
+            group: ['dispatch_status'],
+            raw: true,
+        });
+
+        const total = statusCounts.reduce((sum, r) => sum + Number(r.count), 0);
+        const pending = Number(statusCounts.find(r => r.dispatch_status === 0)?.count) || 0;
+        const in_transit = Number(statusCounts.find(r => r.dispatch_status === 1)?.count) || 0;
+        const completed = Number(statusCounts.find(r => r.dispatch_status === 2)?.count) || 0;
+
+        // Get work order IDs matching the filter for dispatch log aggregation
+        const woIds = await WorkOrder.findAll({
+            where,
+            attributes: ['id'],
+            raw: true,
+        });
+        const ids = woIds.map(w => w.id);
+
+        let qty_out = 0;
+        let qty_delivered = 0;
+        let work_orders = 0;
+
+        if (ids.length > 0) {
+            // Total dispatched qty across all matching work orders
+            const totalDispatched = await WorkOrderDispatchLog.findOne({
+                where: { work_order_id: { [Op.in]: ids } },
+                attributes: [
+                    [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('dispatched_qty')), 0), 'qty_out'],
+                    [sequelize.fn('COUNT', sequelize.fn('DISTINCT', sequelize.col('work_order_id'))), 'work_orders'],
+                ],
+                raw: true,
+            });
+            qty_out = Number(totalDispatched?.qty_out) || 0;
+            work_orders = Number(totalDispatched?.work_orders) || 0;
+
+            // Qty delivered = dispatched qty for fully completed work orders (dispatch_status=2)
+            // const fullyDispatchedIds = woIds.filter(w => {
+            //     const sc = statusCounts.find(r => r.dispatch_status === 2);
+            //     return sc; // we need the actual WO ids with dispatch_status=2
+            // }).map(w => w.id);
+
+            const fullyDispatchedWOs = await WorkOrder.findAll({
+                where: { ...where, dispatch_status: 2 },
+                attributes: ['id'],
+                raw: true,
+            });
+            const fullyIds = fullyDispatchedWOs.map(w => w.id);
+
+            if (fullyIds.length > 0) {
+                const deliveredResult = await WorkOrderDispatchLog.findOne({
+                    where: { work_order_id: { [Op.in]: fullyIds } },
+                    attributes: [
+                        [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('dispatched_qty')), 0), 'qty_delivered'],
+                    ],
+                    raw: true,
+                });
+                qty_delivered = Number(deliveredResult?.qty_delivered) || 0;
+            }
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Dispatch stats fetched successfully",
+            data: {
+                total,
+                pending,
+                in_transit,
+                completed,
+                qty_out,
+                qty_delivered,
+                work_orders,
+            },
+        });
+    } catch (error) {
+        console.error("Error getting dispatch stats:", error);
+        return res.status(500).json({ status: false, message: "Error getting dispatch stats", error: error.message });
+    }
+};
+
+/** Dispatch a work order (partial or full dispatch)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.dispatchWorkOrder = async (req, res) => {
+    // start a transaction
+    const transaction = await sequelize.transaction();
+    try {
+        const { wo_id } = req.params;
+        const {
+            dispatched_qty, 
+            dispatch_status, 
+            dispatch_note = null 
+        } = req.body;
+
+        // get the work order details
+        const [workOrder, previouslyDispatchedQty] = await Promise.all([
+            WorkOrder.findOne({
+                where: { id: wo_id },
+                attributes: ['id', 'dispatch_status', 'product_id', 'final_product_variant_id', 'warehouse_id', 'final_qty'],
+                raw: true,
+            }),
+            WorkOrderDispatchLog.sum('dispatched_qty', {
+                where: { work_order_id: wo_id },
+                transaction,
+            }),
+        ]);
+        // if work order does not exist, return 404. if work order is already fully dispatched, return 400
+        if (!workOrder) {
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        } else if (workOrder.dispatch_status === 2) {
+            return res.status(400).json({ status: false, message: "Work order already fully dispatched" });
+        } else if (Number(previouslyDispatchedQty) + Number(dispatched_qty) > Number(workOrder.final_qty)) {
+            return res.status(400).json({
+                status: false, 
+                message: 
+                    `Dispatched quantity exceeds planned quantity for full dispatch. 
+                    Your remaining quantity for full dispatch is ${ Number(workOrder.final_qty) - Number(previouslyDispatchedQty)}
+                    `
+            });
+        }
+
+        let finalStatus = dispatch_status;
+        const totalDispatchedQty = Number(previouslyDispatchedQty) + Number(dispatched_qty);
+        if (totalDispatchedQty === Number(workOrder.final_qty)) {
+            finalStatus = 2; // Fully dispatched
+        }
+
+        // Log the dispatch details in WorkOrderDispatchLog
+        await WorkOrderDispatchLog.create({
+            company_id: req.user.company_id,
+            work_order_id: wo_id,
+            dispatched_qty,
+            dispatch_note,
+            dispatched_by: req.user.id,
+            dispacthed_at: new Date(),
+        }, { transaction });
+
+        await WorkOrder.update({
+            dispatch_status: finalStatus,
+            dispatch_completed_at: finalStatus === 2 ? new Date() : null,
+        }, {
+            where: { id: wo_id },
+            transaction,
+        });
+
+        // If fully dispatched, update the stock quantity in ProductStockEntry for the finished goods
+        if (finalStatus === 2) {
+            const stockEntry = await ProductStockEntry.findOne({
+                where: {
+                    warehouse_id: workOrder.warehouse_id,
+                    product_id: workOrder.product_id,
+                    ...(workOrder.final_product_variant_id ? { product_variant_id: workOrder.final_product_variant_id } : {}),
+                },
+                attributes: ['id', 'quantity', 'inventory_at_production'],
+                raw: true,
+                transaction,
+            });
+
+            if (stockEntry) {
+                const newQuantity = Number(stockEntry.quantity) + Number(dispatched_qty);
+                // const inventoryAtProduction = stockEntry.inventory_at_production > 0 ? stockEntry.inventory_at_production - Number(dispatched_qty) : 0;
+
+                await ProductStockEntry.update({
+                    quantity: newQuantity,
+                    inventory_at_production: totalDispatchedQty,
+                }, {
+                    where: { id: stockEntry.id },
+                    transaction,
+                });
+            }
+
+        }
+
+        // commit the transaction
+        await transaction.commit();
+
+        // Return with status 200 and message
+        return res.status(200).json({ 
+            status: true,
+            message: "Work order dispatched successfully" 
+        });
+    } catch (error) {
+        console.error("Error dispatching work order:", error);
+        return res.status(500).json({ status: false, message: "Error dispatching work order", error: error.message });
+    }
+}
+
+/** Get dispatch logs for a work order
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.GetDispatchHistory = async (req, res) => {
+    try {
+        const { wo_id } = req.params;
+
+        // get the dispatch logs for the work order
+        const dispatchLogs = await WorkOrderDispatchLog.findAll({
+            where: { work_order_id: wo_id },
+            attributes: ['id', 'dispatched_qty', 'dispatch_note', 'dispacthed_at'],
+            include: [
+                {
+                    association: 'dispatchedBy',
+                    attributes: ['id', 'name'],
+                }
+            ],
+            order: [['dispacthed_at', 'DESC']],
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Work order dispatch logs fetched successfully",
+            data: dispatchLogs,
+        });
+    } catch (error) {
+        console.error("Error getting work order dispatch logs:", error);
+        return res.status(500).json({ status: false, message: "Error getting work order dispatch logs", error: error.message });
+    }
+}

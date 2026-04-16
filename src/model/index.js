@@ -50,6 +50,7 @@ const WorkOrderStep = require('./WorkOrderStep');
 const WorkOrderMaterialIssue = require('./WorkOrderMaterialIssue');
 const ProductionActivityLog = require('./ProductionActivityLog');
 const CompanyProductionStep = require('./CompanyProductionStep');
+const WorkOrderDispatchLog = require('./WorkOrderDispatchLog');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -382,10 +383,12 @@ WorkOrder.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 WorkOrder.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 WorkOrder.belongsTo(ProductVariant, { foreignKey: 'final_product_variant_id', as: 'finalProductVariant' });
 WorkOrder.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+WorkOrder.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 WorkOrder.belongsTo(CompanyProductionStep, { foreignKey: 'production_step_id', as: 'productionStep' });
 WorkOrder.hasMany(WorkOrderStep, { foreignKey: 'wo_id', as: 'workOrderSteps' });
 WorkOrder.hasMany(WorkOrderMaterialIssue, { foreignKey: 'wo_id', as: 'workOrderMaterialIssues' });
 WorkOrder.belongsTo(User, { foreignKey: 'material_issued_by', as: 'materialIssuedBy' });
+WorkOrder.belongsTo(User, { foreignKey: 'production_completed_by', as: 'productionCompletedBy' });
 WorkOrderStep.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
 WorkOrderStep.belongsTo(CompanyProductionStep, { foreignKey: 'step_id', as: 'step' });
 WorkOrderStep.belongsTo(MasterUOM, { foreignKey: 'uom_id', as: 'masterUOM' });
@@ -398,6 +401,9 @@ WorkOrderMaterialIssue.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrde
 ProductionActivityLog.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
 ProductionActivityLog.belongsTo(User, { foreignKey: 'created_by', as: 'createdBy' });
 ProductionActivityLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+
+WorkOrderDispatchLog.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
+WorkOrderDispatchLog.belongsTo(User, { foreignKey: 'dispatched_by', as: 'dispatchedBy' });
 
 module.exports = {
     Module,
@@ -447,5 +453,6 @@ module.exports = {
     WorkOrderStep,
     WorkOrderMaterialIssue,
     ProductionActivityLog,
-    CompanyProductionStep
+    CompanyProductionStep,
+    WorkOrderDispatchLog
 };

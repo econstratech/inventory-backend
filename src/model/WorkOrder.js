@@ -27,9 +27,17 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    warehouse_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     planned_qty: {
         type: DataTypes.INTEGER,
         allowNull: false,
+    },
+    final_qty: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
     },
     due_date: {
         type: DataTypes.DATE,
@@ -45,6 +53,16 @@ const WorkOrder = sequelize.define('work_orders', {
         defaultValue: 1,
         comment: '1: Pending, 2: In Progress, 3: Material Issued, 4: Completed, 5: Cancelled',
     },
+    dispatch_status: {
+        type: DataTypes.SMALLINT,
+        allowNull: false,
+        defaultValue: 0,
+        comment: '0 = Not Dispatched, 1 = Partially Dispatched, 2 = Fully Dispatched',
+    },
+    dispatch_completed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+    },
     material_issued_by: {
         type: DataTypes.BIGINT,
         allowNull: true,
@@ -59,6 +77,11 @@ const WorkOrder = sequelize.define('work_orders', {
         defaultValue: 0,
     },
     material_issue_percent: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
+    dispatch_progress_percent: {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 0,
