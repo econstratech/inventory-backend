@@ -1,5 +1,5 @@
 const express = require("express");
-const { 
+const {
     CreateWorkOrder,
     GetAllWorkOrders,
     DeleteWorkOrder,
@@ -9,7 +9,10 @@ const {
     SaveProductionData,
     GetWorkOrderById,
     UpdateWorkOrder,
+    CancelWorkOrder,
     CompleteProduction,
+    GetWorkOrderStats,
+    GetMonthlyTrend,
     GetDispatchList,
     GetDispatchStats,
     dispatchWorkOrder,
@@ -22,9 +25,11 @@ const { authToken } = require("../utils/Middleware");
 const router = express.Router();
 
 router.post('/work-order/create', authToken, CreateWorkOrder);
+router.get('/work-order/stats', authToken, GetWorkOrderStats);
 router.get('/work-order/list', authToken, GetAllWorkOrders);
 router.get('/work-order/:wo_id', authToken, GetWorkOrderById);
 router.put('/work-order/update/:wo_id', authToken, UpdateWorkOrder);
+router.put('/work-order/cancel/:wo_id', authToken, CancelWorkOrder);
 router.delete('/work-order/delete/:id', authToken, DeleteWorkOrder);
 
 router.get('/work-order/bom-list/:wo_id', authToken, GetBOMListForWorkOrder);
@@ -32,6 +37,9 @@ router.post('/work-order/material-issue', authToken, CreateMaterialIssue);
 router.post('/work-order/material-issue-complete', authToken, CompleteMaterialIssue);
 router.post('/work-order/save-production-data', authToken, SaveProductionData);
 router.post('/work-order/complete-production', authToken, CompleteProduction);
+
+// Production dashboard routes
+router.get('/dashboard/monthly-trend', authToken, GetMonthlyTrend);
 
 // Production dispatch routes
 router.get('/dispatch', authToken, GetDispatchList);

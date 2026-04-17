@@ -585,8 +585,9 @@ exports.GetProductionSteps = async (req, res) => {
  */
 exports.CreateProductionSteps = async (req, res) => {
     try {
-        const stepName = req.body.name.trim();
-        const stepDescription = req.body.description.trim() ?? null;
+        const { name, description } = req.body;
+        const stepName = name.trim();
+        const stepDescription = description ? description.trim() : null;
 
         // Check if production step with same name already exists
         const existingProductionStep = await ProductionStepsMaster.findOne({
@@ -608,6 +609,7 @@ exports.CreateProductionSteps = async (req, res) => {
             name: stepName,
             description: stepDescription,
             is_active: 1,
+            colour_code: req.body.colour_code?.trim() ?? null,
         });
         // return success response
         return res.status(200).json({ status: true, message: "Production step created successfully" });

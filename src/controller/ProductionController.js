@@ -212,7 +212,7 @@ exports.GetAllWorkOrders = async (req, res) => {
                     include: [
                         {
                             association: 'step',
-                            attributes: ['id', 'name'],
+                            attributes: ['id', 'name', 'colour_code'],
                         }, 
                         {
                             association: 'masterUOM',
@@ -528,6 +528,40 @@ exports.DeleteWorkOrder = async (req, res) => {
             message: "Error deleting work order",
             error: error.message
         });
+    }
+}
+
+/**
+ * Cancel a work order
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.CancelWorkOrder = async (req, res) => {
+    try {
+        const { wo_id } = req.params;
+        // check if work order exists
+        const workOrder = await WorkOrder.findOne({
+            attributes: ['id', 'status'],
+            where: { id: wo_id },
+        });
+        // if work order does not exist, return 404
+        if (!workOrder) {
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        }
+        if (workOrder.status === 4) {
+            return res.status(400).json({ status: false, message: "Completed work order cannot be cancelled" });
+        }
+        await WorkOrder.update({
+            status: 5, // 5: Cancelled
+        }, {
+            where: { id: wo_id },
+        });
+        // return success response
+        return res.status(200).json({ status: true, message: "Work order cancelled successfully" });
+    } catch (error) {
+        console.error("Error cancelling work order:", error);
+        return res.status(500).json({ status: false, message: "Error cancelling work order", error: error.message });
     }
 }
 
@@ -952,6 +986,211 @@ exports.CompleteProduction = async (req, res) => {
             message: "Error completing production",
             error: error.message,
         });
+    }
+};
+
+/**
+ * Get work order stats (counts by status + average progress)
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.GetWorkOrderStats = async (req, res) => {
+    try {
+        const company_id = req.user.company_id;
+
+        const where = { company_id };
+
+        // date range filter
+        if (req.query.date_from && req.query.date_to) {
+            where.created_at = {
+                [Op.between]: [new Date(req.query.date_from), new Date(req.query.date_to + "T23:59:59.999Z")],
+            };
+        } else if (req.query.date_from) {
+            where.created_at = { [Op.gte]: new Date(req.query.date_from) };
+        } else if (req.query.date_to) {
+            where.created_at = { [Op.lte]: new Date(req.query.date_to + "T23:59:59.999Z") };
+        }
+
+        // Count by status
+        const statusCounts = await WorkOrder.findAll({
+            where,
+            attributes: [
+                'status',
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+            ],
+            group: ['status'],
+            raw: true,
+        });
+
+        const getCount = (status) => Number(statusCounts.find(r => r.status === status)?.count) || 0;
+
+        const pending_material_issue = getCount(1);
+        const production_in_progress = getCount(2);
+        const material_issued = getCount(3);
+        const production_completed = getCount(4);
+        const cancelled = getCount(5);
+        const total = statusCounts.reduce((sum, r) => sum + Number(r.count), 0);
+
+        // Average production progress
+        const avgResult = await WorkOrder.findOne({
+            where,
+            attributes: [
+                [sequelize.fn('AVG', sequelize.col('progress_percent')), 'avg_progress'],
+            ],
+            raw: true,
+        });
+        const avg_production_progress = Number(Number(avgResult?.avg_progress || 0).toFixed(2));
+
+        return res.status(200).json({
+            status: true,
+            message: "Work order stats fetched successfully",
+            data: {
+                total,
+                pending_material_issue,
+                production_in_progress,
+                material_issued,
+                production_completed,
+                cancelled,
+                avg_production_progress,
+            },
+        });
+    } catch (error) {
+        console.error("Error getting work order stats:", error);
+        return res.status(500).json({ status: false, message: "Error getting work order stats", error: error.message });
+    }
+};
+
+/**
+ * Get monthly production & dispatch trend
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.GetMonthlyTrend = async (req, res) => {
+    try {
+        const company_id = req.user.company_id;
+        const { date_from, date_to } = req.query;
+
+        // Build date filter for work orders
+        const woWhere = { company_id };
+        if (date_from && date_to) {
+            woWhere.created_at = {
+                [Op.between]: [new Date(date_from), new Date(date_to + "T23:59:59.999Z")],
+            };
+        } else if (date_from) {
+            woWhere.created_at = { [Op.gte]: new Date(date_from) };
+        } else if (date_to) {
+            woWhere.created_at = { [Op.lte]: new Date(date_to + "T23:59:59.999Z") };
+        }
+
+        // WOs created per month
+        const createdByMonth = await WorkOrder.findAll({
+            where: woWhere,
+            attributes: [
+                [sequelize.fn('DATE_FORMAT', sequelize.col('created_at'), '%Y-%m'), 'ym'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+            ],
+            group: [sequelize.fn('DATE_FORMAT', sequelize.col('created_at'), '%Y-%m')],
+            raw: true,
+        });
+
+        // WOs completed per month (status=4, using production_completed_at)
+        const completedWhere = { ...woWhere, status: 4 };
+        // For completed, group by production_completed_at month
+        const completedDateWhere = { company_id, status: 4 };
+        if (date_from && date_to) {
+            completedDateWhere.production_completed_at = {
+                [Op.between]: [new Date(date_from), new Date(date_to + "T23:59:59.999Z")],
+            };
+        } else if (date_from) {
+            completedDateWhere.production_completed_at = { [Op.gte]: new Date(date_from) };
+        } else if (date_to) {
+            completedDateWhere.production_completed_at = { [Op.lte]: new Date(date_to + "T23:59:59.999Z") };
+        }
+
+        const completedByMonth = await WorkOrder.findAll({
+            where: completedDateWhere,
+            attributes: [
+                [sequelize.fn('DATE_FORMAT', sequelize.col('production_completed_at'), '%Y-%m'), 'ym'],
+                [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+            ],
+            group: [sequelize.fn('DATE_FORMAT', sequelize.col('production_completed_at'), '%Y-%m')],
+            raw: true,
+        });
+
+        // Dispatches per month
+        const dispatchWhere = {};
+        if (date_from && date_to) {
+            dispatchWhere.dispacthed_at = {
+                [Op.between]: [new Date(date_from), new Date(date_to + "T23:59:59.999Z")],
+            };
+        } else if (date_from) {
+            dispatchWhere.dispacthed_at = { [Op.gte]: new Date(date_from) };
+        } else if (date_to) {
+            dispatchWhere.dispacthed_at = { [Op.lte]: new Date(date_to + "T23:59:59.999Z") };
+        }
+
+        // Filter dispatch logs by company through work order
+        const companyWoIds = await WorkOrder.findAll({
+            where: { company_id },
+            attributes: ['id'],
+            raw: true,
+        });
+        const woIds = companyWoIds.map(w => w.id);
+
+        let dispatchByMonth = [];
+        if (woIds.length > 0) {
+            dispatchWhere.work_order_id = { [Op.in]: woIds };
+            dispatchByMonth = await WorkOrderDispatchLog.findAll({
+                where: dispatchWhere,
+                attributes: [
+                    [sequelize.fn('DATE_FORMAT', sequelize.col('dispacthed_at'), '%Y-%m'), 'ym'],
+                    [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
+                ],
+                group: [sequelize.fn('DATE_FORMAT', sequelize.col('dispacthed_at'), '%Y-%m')],
+                raw: true,
+            });
+        }
+
+        // Merge all months into a single sorted array
+        const monthMap = {};
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        for (const r of createdByMonth) {
+            if (!r.ym) continue;
+            if (!monthMap[r.ym]) monthMap[r.ym] = { created: 0, completed: 0, dispatches: 0 };
+            monthMap[r.ym].created = Number(r.count);
+        }
+        for (const r of completedByMonth) {
+            if (!r.ym) continue;
+            if (!monthMap[r.ym]) monthMap[r.ym] = { created: 0, completed: 0, dispatches: 0 };
+            monthMap[r.ym].completed = Number(r.count);
+        }
+        for (const r of dispatchByMonth) {
+            if (!r.ym) continue;
+            if (!monthMap[r.ym]) monthMap[r.ym] = { created: 0, completed: 0, dispatches: 0 };
+            monthMap[r.ym].dispatches = Number(r.count);
+        }
+
+        const data = Object.keys(monthMap)
+            .sort()
+            .map(ym => {
+                const [, m] = ym.split('-');
+                return {
+                    month: monthNames[parseInt(m, 10) - 1],
+                    ...monthMap[ym],
+                };
+            });
+
+        return res.status(200).json({
+            status: true,
+            message: "Monthly trend fetched successfully",
+            data,
+        });
+    } catch (error) {
+        console.error("Error getting monthly trend:", error);
+        return res.status(500).json({ status: false, message: "Error getting monthly trend", error: error.message });
     }
 };
 
