@@ -11,6 +11,7 @@ const {
     UpdateWorkOrder,
     CancelWorkOrder,
     CompleteProduction,
+    ExportWorkOrders,
     GetWorkOrderStats,
     GetMonthlyTrend,
     GetDispatchList,
@@ -26,6 +27,7 @@ const router = express.Router();
 
 router.post('/work-order/create', authToken, CreateWorkOrder);
 router.get('/work-order/stats', authToken, GetWorkOrderStats);
+router.get('/work-order/export', authToken, ExportWorkOrders);
 router.get('/work-order/list', authToken, GetAllWorkOrders);
 router.get('/work-order/:wo_id', authToken, GetWorkOrderById);
 router.put('/work-order/update/:wo_id', authToken, UpdateWorkOrder);

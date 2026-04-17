@@ -119,6 +119,87 @@
 
 /**
  * @swagger
+ * /api/production/work-order/export:
+ *   get:
+ *     summary: Export work orders as CSV
+ *     description: |
+ *       Streams all matching work orders as a CSV file. Supports the same filters as the list endpoint.
+ *       Data is fetched in batches of 200 to avoid memory issues and event loop blocking.
+ *       Filename format: `work-orders-DDMMYYYY-NNN.csv` where NNN is a 3-digit random number.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [active, completed, cancelled, "1", "2", "3", "4", "5"]
+ *         description: Filter by workflow status bucket or numeric status
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by wo_number, product name, or customer name
+ *       - in: query
+ *         name: wo_number
+ *         schema:
+ *           type: string
+ *         description: Exact match on work order number
+ *       - in: query
+ *         name: product_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by product ID
+ *       - in: query
+ *         name: customer_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by customer ID
+ *       - in: query
+ *         name: production_step_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by current production step
+ *       - in: query
+ *         name: due_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by exact due date
+ *     responses:
+ *       200:
+ *         description: CSV file streamed successfully
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *         headers:
+ *           Content-Disposition:
+ *             description: Attachment filename
+ *             schema:
+ *               type: string
+ *               example: 'attachment; filename="work-orders-17042026-531.csv"'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error exporting work orders"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/stats:
  *   get:
  *     summary: Get work order statistics

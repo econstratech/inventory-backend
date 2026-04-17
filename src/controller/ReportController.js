@@ -1,9 +1,11 @@
 const { Op, QueryTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
-const { 
-  Purchase, 
+const {
+  Purchase,
   StockTransferLog,
-  ReceiveProductBatch
+  ReceiveProductBatch,
+  WorkOrder,
+  MasterBOM,
 } = require("../model");
 const CommonHelper = require("../helpers/commonHelper");
 
@@ -1179,6 +1181,225 @@ exports.getBatchExpirationReport = async (req, res) => {
     return res.status(500).json({
       status: false,
       message: "Error getting batch expiration report",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get material issue report for completed work orders
+ * Returns paginated list of completed WOs with BOM required qty vs actually issued qty
+ */
+exports.getMaterialIssueReport = async (req, res) => {
+  try {
+    const company_id = req.user.company_id;
+    const isVariantBased = !!req.user.is_variant_based;
+
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+    const search = req.query.search || "";
+
+    // ── Build where clause ──
+    const where = { company_id, status: 4 };
+
+    if (search) {
+      where[Op.or] = [
+        { wo_number: { [Op.like]: `%${search}%` } },
+        { "$product.product_name$": { [Op.like]: `%${search}%` } },
+        { "$customer.name$": { [Op.like]: `%${search}%` } },
+      ];
+    }
+    if (req.query.customer_id) where.customer_id = req.query.customer_id;
+    if (req.query.product_id) where.product_id = req.query.product_id;
+
+    // date range filter on production_completed_at
+    if (req.query.date_from && req.query.date_to) {
+      where.production_completed_at = {
+        [Op.between]: [new Date(req.query.date_from), new Date(req.query.date_to + "T23:59:59.999Z")],
+      };
+    } else if (req.query.date_from) {
+      where.production_completed_at = { [Op.gte]: new Date(req.query.date_from) };
+    } else if (req.query.date_to) {
+      where.production_completed_at = { [Op.lte]: new Date(req.query.date_to + "T23:59:59.999Z") };
+    }
+
+    // ── Fetch paginated completed work orders ──
+    const workOrders = await WorkOrder.findAndCountAll({
+      attributes: [
+        "id",
+        "wo_number",
+        "product_id",
+        "final_product_variant_id",
+        "planned_qty",
+        "final_qty",
+        "due_date",
+        "production_completed_at",
+      ],
+      where,
+      limit,
+      offset,
+      distinct: true,
+      order: [["production_completed_at", "DESC"]],
+      subQuery: false,
+      include: [
+        {
+          association: "product",
+          attributes: ["id", "product_name", "product_code"],
+        },
+        ...(isVariantBased
+          ? [
+              {
+                association: "finalProductVariant",
+                attributes: ["id", "weight_per_unit"],
+                include: [
+                  { association: "masterUOM", attributes: ["id", "label"] },
+                ],
+              },
+            ]
+          : []),
+        {
+          association: "customer",
+          attributes: ["id", "name"],
+        },
+        {
+          association: "workOrderMaterialIssues",
+          attributes: [
+            "id",
+            "rm_product_id",
+            "rm_product_variant_id",
+            "issued_qty",
+            "warehouse_id",
+          ],
+        },
+      ],
+    });
+
+    if (workOrders.rows.length === 0) {
+      return res.status(200).json({
+        status: true,
+        message: "Material issue report fetched successfully",
+        data: CommonHelper.paginate(workOrders, page, limit),
+      });
+    }
+
+    // ── Batch-fetch BOM data for all WOs in this page ──
+    // Build unique (product_id, variant_id) pairs to query BOM once
+    const bomConditions = [];
+    for (const wo of workOrders.rows) {
+      if (isVariantBased && wo.final_product_variant_id) {
+        bomConditions.push({
+          [Op.and]: [
+            { final_product_id: wo.product_id },
+            { final_product_variant_id: wo.final_product_variant_id },
+          ],
+        });
+      } else {
+        bomConditions.push({
+          [Op.and]: [
+            { final_product_id: wo.product_id },
+            { final_product_variant_id: null },
+          ],
+        });
+      }
+    }
+
+    const bomRows = await MasterBOM.findAll({
+      attributes: [
+        "id",
+        "final_product_id",
+        "final_product_variant_id",
+        "raw_material_product_id",
+        "raw_material_variant_id",
+        "quantity",
+      ],
+      where: { [Op.or]: bomConditions },
+      include: [
+        {
+          association: "rawMaterialProduct",
+          attributes: ["id", "product_name", "product_code"],
+        },
+        ...(isVariantBased
+          ? [
+              {
+                association: "rawMaterialProductVariant",
+                attributes: ["id", "weight_per_unit"],
+                required: false,
+                include: [
+                  { association: "masterUOM", attributes: ["id", "label"] },
+                ],
+              },
+            ]
+          : []),
+      ],
+    });
+
+    // Index BOM rows by "productId:variantId" for fast lookup
+    const bomMap = {};
+    for (const bom of bomRows) {
+      const key = `${bom.final_product_id}:${bom.final_product_variant_id || "null"}`;
+      if (!bomMap[key]) bomMap[key] = [];
+      bomMap[key].push(bom);
+    }
+
+    // ── Merge BOM + material issues per work order ──
+    const rows = workOrders.rows.map((wo) => {
+      const woJSON = wo.toJSON();
+      const bomKey = `${woJSON.product_id}:${woJSON.final_product_variant_id || "null"}`;
+      const bomItems = bomMap[bomKey] || [];
+
+      // Index issued quantities by "rmProductId:rmVariantId"
+      const issuedMap = {};
+      for (const mi of woJSON.workOrderMaterialIssues || []) {
+        const miKey = `${mi.rm_product_id}:${mi.rm_product_variant_id || "null"}`;
+        issuedMap[miKey] = (issuedMap[miKey] || 0) + Number(mi.issued_qty || 0);
+      }
+
+      // Build material list: BOM required qty (scaled by planned_qty) vs issued
+      const materialDetails = bomItems.map((bom) => {
+        const bomJSON = bom.toJSON ? bom.toJSON() : bom;
+        const miKey = `${bomJSON.raw_material_product_id}:${bomJSON.raw_material_variant_id || "null"}`;
+        const requiredQty = Number(bomJSON.quantity) * Number(woJSON.planned_qty);
+        const issuedQty = issuedMap[miKey] || 0;
+
+        return {
+          bom_id: bomJSON.id,
+          rm_product_id: bomJSON.raw_material_product_id,
+          rm_product_variant_id: bomJSON.raw_material_variant_id,
+          rawMaterialProduct: bomJSON.rawMaterialProduct,
+          ...(isVariantBased ? { rawMaterialProductVariant: bomJSON.rawMaterialProductVariant } : {}),
+          bom_qty_per_unit: Number(bomJSON.quantity),
+          required_qty: requiredQty,
+          issued_qty: issuedQty,
+          variance: issuedQty - requiredQty,
+        };
+      });
+
+      // Remove raw workOrderMaterialIssues from response, replaced by materialDetails
+      delete woJSON.workOrderMaterialIssues;
+
+      return {
+        ...woJSON,
+        materialDetails,
+      };
+    });
+
+    const paginatedData = CommonHelper.paginate(
+      { count: workOrders.count, rows },
+      page,
+      limit
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Material issue report fetched successfully",
+      data: paginatedData,
+    });
+  } catch (error) {
+    console.error("Get material issue report error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Error getting material issue report",
       error: error.message,
     });
   }
