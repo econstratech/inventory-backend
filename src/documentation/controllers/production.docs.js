@@ -119,6 +119,103 @@
 
 /**
  * @swagger
+ * /api/production/work-order/stats:
+ *   get:
+ *     summary: Get work order statistics
+ *     description: |
+ *       Returns aggregated work order counts grouped by status and the average production progress for the authenticated user's company.
+ *       Supports optional date range filtering on `created_at`.
+ *
+ *       **Status mapping:**
+ *       | Value | Label                  |
+ *       |-------|------------------------|
+ *       | 1     | Pending Material Issue  |
+ *       | 2     | Production In-Progress  |
+ *       | 3     | Material Issued         |
+ *       | 4     | Production Completed    |
+ *       | 5     | Cancelled               |
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter work orders created on or after this date (inclusive)
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter work orders created on or before this date (inclusive, end of day)
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: Work order stats fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order stats fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       description: Total work orders matching the filter
+ *                       example: 42
+ *                     pending_material_issue:
+ *                       type: integer
+ *                       description: Work orders with status 1 (Pending)
+ *                       example: 8
+ *                     production_in_progress:
+ *                       type: integer
+ *                       description: Work orders with status 2 (In-Progress)
+ *                       example: 12
+ *                     material_issued:
+ *                       type: integer
+ *                       description: Work orders with status 3 (Material Issued)
+ *                       example: 5
+ *                     production_completed:
+ *                       type: integer
+ *                       description: Work orders with status 4 (Production Completed)
+ *                       example: 15
+ *                     cancelled:
+ *                       type: integer
+ *                       description: Work orders with status 5 (Cancelled)
+ *                       example: 2
+ *                     avg_production_progress:
+ *                       type: number
+ *                       description: Average production progress percentage across all matching work orders
+ *                       example: 64.75
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting work order stats"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/list:
  *   get:
  *     summary: Get work order list (paginated)
@@ -796,6 +893,82 @@
 
 /**
  * @swagger
+ * /api/production/work-order/cancel/{wo_id}:
+ *   put:
+ *     summary: Cancel a work order
+ *     description: |
+ *       Sets the work order `status` to **5** (Cancelled).
+ *       Returns **400** if the work order is already completed (status 4) — completed work orders cannot be cancelled.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: wo_id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Work order ID
+ *         example: 101
+ *     responses:
+ *       200:
+ *         description: Work order cancelled successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work order cancelled successfully"
+ *       400:
+ *         description: Completed work order cannot be cancelled
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Completed work order cannot be cancelled"
+ *       404:
+ *         description: Work order not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error cancelling work order"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/bom-list/{wo_id}:
  *   get:
  *     summary: Get BOM list for a work order
@@ -1222,6 +1395,85 @@
  *                 message:
  *                   type: string
  *                   example: "Input quantity and output quantity are required"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/production/dashboard/monthly-trend:
+ *   get:
+ *     summary: Get monthly production & dispatch trend
+ *     description: |
+ *       Returns an array of monthly buckets with counts of work orders created, completed, and dispatches logged.
+ *       Used by the Production Dashboard bar chart. Supports optional date range filtering.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter from this date (inclusive). Applied to `created_at` for created WOs, `production_completed_at` for completed WOs, and `dispacthed_at` for dispatches.
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter up to this date (inclusive, end of day)
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: Monthly trend fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Monthly trend fetched successfully"
+ *                 data:
+ *                   type: array
+ *                   description: One entry per month that has activity, sorted chronologically
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       month:
+ *                         type: string
+ *                         description: Abbreviated month name
+ *                         example: "Apr"
+ *                       created:
+ *                         type: integer
+ *                         description: Work orders created in this month
+ *                         example: 12
+ *                       completed:
+ *                         type: integer
+ *                         description: Work orders whose production was completed in this month
+ *                         example: 8
+ *                       dispatches:
+ *                         type: integer
+ *                         description: Dispatch log entries recorded in this month
+ *                         example: 5
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting monthly trend"
  *                 error:
  *                   type: string
  */

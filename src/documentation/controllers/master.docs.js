@@ -895,6 +895,10 @@
  *                       is_active:
  *                         type: integer
  *                         example: 1
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                         example: "2026-01-09T10:00:00.000Z"
  *       400:
  *         description: Error while getting production steps
  *         content:
@@ -938,9 +942,14 @@
  *                 nullable: true
  *                 description: Optional description (trimmed). Omit or send empty string if none.
  *                 example: "Cut raw material as per BOM dimensions"
+ *               colour_code:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Optional hex color code for the step (e.g. "#FF0000"). Omit or send null if none.
  *           example:
  *             name: "Cutting"
  *             description: "Cut raw material as per BOM dimensions"
+ *             colour_code: "#FF0000"
  *     responses:
  *       200:
  *         description: Production step created successfully

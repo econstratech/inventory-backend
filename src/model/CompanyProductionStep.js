@@ -1,4 +1,4 @@
-const { DataTypes } = require("sequelize");
+const { DataTypes, col } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
 const CompanyProductionStep = sequelize.define('company_production_steps', {
@@ -28,6 +28,16 @@ const CompanyProductionStep = sequelize.define('company_production_steps', {
         allowNull: false,
         defaultValue: 1,
         comment: '1: Active, 0: Inactive',
+    },
+    is_optional: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 1,
+        comment: '1: Mandatory Step, 0: Optional Step',
+    },
+    colour_code: {
+        type: DataTypes.STRING,
+        allowNull: true,
     },
     created_at: {
         type: DataTypes.DATE,

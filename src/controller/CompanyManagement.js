@@ -358,7 +358,7 @@ exports.GetCompanyProductionSteps = async (req, res) => {
         // get all production steps
         const productionSteps = await CompanyProductionStep.findAll({
             where: { company_id: id, is_active: 1 },
-            attributes: ['id', 'name', 'description', 'is_active', 'master_step_id'],
+            attributes: ['id', 'name', 'description', 'is_active', 'master_step_id', 'colour_code'],
             order: [['id', 'ASC']],
             raw: true,
         });
@@ -439,7 +439,7 @@ exports.GetCompanyProductionFlow = async (req, res) => {
             include: [
                 {
                     association: 'step',
-                    attributes: ['id', 'name'],
+                    attributes: ['id', 'name', 'colour_code'],
                 }
             ]
         });
@@ -471,23 +471,24 @@ exports.CreateCompanyProductionStep = async (req, res) => {
                 raw: true,
             }),
             CompanyProductionStep.findOne({
-                attributes: ['id', 'name', 'description'],
+                attributes: ['id'],
                 where: { company_id: company_id, master_step_id: step_id },
                 raw: true,
             })
         ]);
         if (!masterStep) {
             return res.status(400).json({ success: false, message: "Step not found !" })
-        } if (step) {
-            return res.status(400).json({ success: false, message: "Step already exists !" })
+        } else if (step) {
+            return res.status(400).json({ success: false, message: "Company production step already exists for this master step !" })
         }
         // create the company production step
         await CompanyProductionStep.create({
             company_id: company_id,
-            master_step_id: step_id,
-            name: step.name,
-            description: step.description,
+            master_step_id: masterStep.id,
+            name: masterStep.name,
+            description: masterStep.description,
             is_active: 1,
+            colour_code: req.body.colour_code?.trim() ?? null,
         });
         // return the success response
         return res.status(200).json({ success: true, message: "Company production step has been created successfully" })
