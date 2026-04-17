@@ -119,12 +119,15 @@ exports.GetAllWorkOrders = async (req, res) => {
         };
 
         if (req.query.status) {
-            if (req.query.status === 'active') {
+            const statusVal = req.query.status;
+            if (statusVal === 'active') {
                 where.status = {[Op.in]: [1, 2, 3]};
-            } else if (req.query.status === 'completed') {
+            } else if (statusVal === 'completed') {
                 where.status = 4;
-            } else if (req.query.status === 'cancelled') {
+            } else if (statusVal === 'cancelled') {
                 where.status = 5;
+            } else if (!isNaN(Number(statusVal))) {
+                where.status = Number(statusVal);
             }
         }
         // if search is provided then add it to the where clause
@@ -1582,3 +1585,172 @@ exports.GetDispatchHistory = async (req, res) => {
         return res.status(500).json({ status: false, message: "Error getting work order dispatch logs", error: error.message });
     }
 }
+
+// ── CSV export helpers ──────────────────────────────────────────
+const EXPORT_BATCH_SIZE = 200;
+
+function csvEscape(val) {
+    if (val === null || val === undefined) return "";
+    const s = String(val);
+    if (/[,"\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+}
+
+const WO_STATUS_LABELS = {
+    1: "Pending",
+    2: "In-Progress",
+    3: "Material Issued",
+    4: "Completed",
+    5: "Cancelled",
+};
+
+/**
+ * Export work orders as CSV (streamed in batches)
+ * Supports the same filters as GetAllWorkOrders
+ */
+exports.ExportWorkOrders = async (req, res) => {
+    try {
+        const isVariantBased = req.user.is_variant_based;
+
+        // ── Build where clause (same logic as GetAllWorkOrders) ──
+        const where = { company_id: req.user.company_id };
+
+        if (req.query.status) {
+            const statusVal = req.query.status;
+            if (statusVal === 'active') {
+                where.status = { [Op.in]: [1, 2, 3] };
+            } else if (statusVal === 'completed') {
+                where.status = 4;
+            } else if (statusVal === 'cancelled') {
+                where.status = 5;
+            } else if (!isNaN(Number(statusVal))) {
+                where.status = Number(statusVal);
+            }
+        }
+
+        const search = req.query.search || '';
+        if (search) {
+            where[Op.or] = [
+                { wo_number: { [Op.like]: `%${search}%` } },
+                { '$product.product_name$': { [Op.like]: `%${search}%` } },
+                { '$customer.name$': { [Op.like]: `%${search}%` } },
+            ];
+        }
+        if (req.query.wo_number) where.wo_number = req.query.wo_number;
+        if (req.query.product_id) where.product_id = req.query.product_id;
+        if (req.query.customer_id) where.customer_id = req.query.customer_id;
+        if (req.query.production_step_id) where.production_step_id = req.query.production_step_id;
+        if (req.query.due_date) {
+            where.due_date = { [Op.gte]: req.query.due_date, [Op.lte]: req.query.due_date };
+        }
+
+        // ── File name ──
+        const d = new Date();
+        const dateStr = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+        const rand = String(Math.floor(Math.random() * 900) + 100);
+        const filename = `work-orders-${dateStr}-${rand}.csv`;
+
+        // ── Stream headers ──
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+        const headerCols = [
+            "WO Number",
+            "Customer",
+            "Product",
+            "Product Code",
+            ...(isVariantBased ? ["Variant (Weight/Unit)"] : []),
+            "Planned Qty",
+            "Final Qty",
+            "Status",
+            "Current Step",
+            "Process Flow",
+            "Store",
+            "Due Date",
+            "Created Date",
+        ];
+        res.write(headerCols.join(",") + "\n");
+
+        // ── Batch loop ──
+        let offset = 0;
+        const includes = [
+            { association: 'product', attributes: ['id', 'product_name', 'product_code'] },
+            ...(isVariantBased ? [{
+                association: 'finalProductVariant',
+                attributes: ['id', 'weight_per_unit'],
+                include: [{ association: 'masterUOM', attributes: ['id', 'label'] }]
+            }] : []),
+            { association: 'customer', attributes: ['id', 'name'] },
+            { association: 'warehouse', attributes: ['id', 'name'] },
+            { association: 'productionStep', attributes: ['id', 'name'] },
+            {
+                association: 'workOrderSteps',
+                attributes: ['id', 'step_id', 'sequence'],
+                include: [{ association: 'step', attributes: ['id', 'name'] }]
+            },
+        ];
+
+        while (true) {
+            const batch = await WorkOrder.findAll({
+                attributes: [
+                    'id', 'wo_number', 'planned_qty', 'final_qty',
+                    'due_date', 'status', 'created_at',
+                ],
+                where,
+                order: [['created_at', 'DESC'], ['workOrderSteps', 'sequence', 'ASC']],
+                limit: EXPORT_BATCH_SIZE,
+                offset,
+                include: includes,
+                subQuery: false,
+            });
+
+            if (batch.length === 0) break;
+
+            for (const wo of batch) {
+                const steps = (wo.workOrderSteps || [])
+                    .slice()
+                    .sort((a, b) => a.sequence - b.sequence)
+                    .map(s => s.step?.name)
+                    .filter(Boolean)
+                    .join(" > ");
+
+                const row = [
+                    csvEscape(wo.wo_number),
+                    csvEscape(wo.customer?.name),
+                    csvEscape(wo.product?.product_name),
+                    csvEscape(wo.product?.product_code),
+                    ...(isVariantBased ? [
+                        csvEscape(`${wo.finalProductVariant?.weight_per_unit} ${wo.finalProductVariant?.masterUOM?.label}`),
+                    ] : []),
+                    csvEscape(wo.planned_qty),
+                    csvEscape(wo.final_qty),
+                    csvEscape(WO_STATUS_LABELS[wo.status] || wo.status),
+                    csvEscape(wo.productionStep?.name),
+                    csvEscape(steps),
+                    csvEscape(wo.warehouse?.name),
+                    csvEscape(wo.due_date ? new Date(wo.due_date).toLocaleDateString("en-GB") : ""),
+                    csvEscape(wo.created_at ? new Date(wo.created_at).toLocaleDateString("en-GB") : ""),
+                ];
+                res.write(row.join(",") + "\n");
+            }
+
+            offset += batch.length;
+            if (batch.length < EXPORT_BATCH_SIZE) break;
+
+            // Yield to event loop between batches
+            await new Promise(resolve => setImmediate(resolve));
+        }
+
+        res.end();
+    } catch (error) {
+        console.error("Error exporting work orders:", error);
+        if (!res.headersSent) {
+            return res.status(500).json({
+                status: false,
+                message: "Error exporting work orders",
+                error: error.message,
+            });
+        }
+        res.end();
+    }
+};

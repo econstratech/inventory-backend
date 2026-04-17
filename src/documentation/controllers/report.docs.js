@@ -1582,3 +1582,179 @@
  *                 error:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/report/production/material-issue-report:
+ *   get:
+ *     summary: Get material issue report for completed work orders
+ *     description: |
+ *       Returns a paginated list of completed work orders (status = 4) with their BOM-based material requirements vs actually issued quantities.
+ *       For each work order, `materialDetails` contains one entry per BOM raw material showing `required_qty` (BOM qty x planned qty), `issued_qty`, and `variance` (issued - required).
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Records per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by wo_number, product name, or customer name
+ *       - in: query
+ *         name: customer_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by customer ID
+ *       - in: query
+ *         name: product_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by finished good product ID
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date from (inclusive)
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date to (inclusive)
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: Material issue report fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Material issue report fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                         total_pages:
+ *                           type: integer
+ *                         current_page:
+ *                           type: integer
+ *                         per_page:
+ *                           type: integer
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                           wo_number:
+ *                             type: string
+ *                             example: "WO-2026-738996"
+ *                           planned_qty:
+ *                             type: number
+ *                           final_qty:
+ *                             type: number
+ *                             nullable: true
+ *                           due_date:
+ *                             type: string
+ *                             format: date
+ *                           production_completed_at:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                           product:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               product_name:
+ *                                 type: string
+ *                               product_code:
+ *                                 type: string
+ *                           customer:
+ *                             type: object
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               name:
+ *                                 type: string
+ *                           materialDetails:
+ *                             type: array
+ *                             description: BOM materials with required vs issued comparison
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 bom_id:
+ *                                   type: integer
+ *                                 rm_product_id:
+ *                                   type: integer
+ *                                 rm_product_variant_id:
+ *                                   type: integer
+ *                                   nullable: true
+ *                                 rawMaterialProduct:
+ *                                   type: object
+ *                                   properties:
+ *                                     id:
+ *                                       type: integer
+ *                                     product_name:
+ *                                       type: string
+ *                                       example: "Sheet paper"
+ *                                     product_code:
+ *                                       type: string
+ *                                       example: "RM-001"
+ *                                 bom_qty_per_unit:
+ *                                   type: number
+ *                                   description: BOM quantity required per unit of finished good
+ *                                   example: 2
+ *                                 required_qty:
+ *                                   type: number
+ *                                   description: Total required (bom_qty_per_unit x planned_qty)
+ *                                   example: 160
+ *                                 issued_qty:
+ *                                   type: number
+ *                                   description: Actually issued quantity from material issues
+ *                                   example: 150
+ *                                 variance:
+ *                                   type: number
+ *                                   description: Difference (issued_qty - required_qty). Negative means under-issued.
+ *                                   example: -10
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting material issue report"
+ *                 error:
+ *                   type: string
+ */
