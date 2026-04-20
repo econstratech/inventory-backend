@@ -11,6 +11,8 @@ const {
     WorkOrderMaterialIssue,
     CompanyProductionStep,
     ProductStockEntry,
+    ProductionPlanning,
+    ProductionActuals,
 } = require("../model")
 const CommonHelper = require("../helpers/commonHelper");
 const WorkOrderDispatchLog = require("../model/WorkOrderDispatchLog");
@@ -1754,3 +1756,373 @@ exports.ExportWorkOrders = async (req, res) => {
         res.end();
     }
 };
+
+/** Create production planning for a work order
+ * Validations:
+ * - Only allowed to create planning if it does not already exist for the work order No.
+ */
+exports.CreateProductionPlanning = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { 
+            wo_number, 
+            product_id,
+            responsible_staff, 
+            final_product_variant_id,
+            required_quantity,
+            planned_quantity,
+            planned_start_date,
+            planned_end_date,
+            process_step,
+            shift,
+        } = req.body;
+
+        // get company_id from auth middleware
+        const company_id = req.user.company_id;
+        const isVariantBased = req.user.is_variant_based;
+        // validate required fields
+        if (!wo_number || !product_id) {
+            return res.status(400).json({ status: false, message: "wo_number and product_id are required" });
+        } else if (isVariantBased && !final_product_variant_id) {
+            return res.status(400).json({ status: false, message: "final_product_variant_id is required for variant based companies" });
+        }
+
+        // Check if planning exists, if yes then return with error
+        const isPlanningExist = await ProductionPlanning.findOne({
+            attributes: ['id'],
+            where: { wo_number, company_id },
+            transaction,
+        });
+        if (isPlanningExist) {
+            return res.status(400).json({ status: false, message: "Production planning already exists for this work order" });
+        }
+
+        // Create production planning record
+        await ProductionPlanning.create({
+            company_id,
+            user_id: req.user.id,
+            wo_number: wo_number.trim() || `WO${Date.now()}`,
+            responsible_staff: responsible_staff?.trim() || null,
+            product_id: Number(product_id),
+            final_product_variant_id: Number(final_product_variant_id) || null,
+            required_qty: parseInt(required_quantity) || 0,
+            planned_qty: parseInt(planned_quantity) || 0,
+            planned_start_date: planned_start_date || new Date(),
+            planned_end_date: planned_end_date || new Date(),
+            process_step: process_step || null,
+            shift: shift ? JSON.stringify(shift) : null,
+        }, { transaction });
+
+        // Commit the transaction
+        await transaction.commit();
+
+        // Return with status 200 and message
+        return res.status(200).json({ status: true, message: "Production planning created successfully" });
+    } catch (error) {
+        console.error("Error creating production planning:", error);
+        // Rollback the transaction in case of error
+        await transaction.rollback();
+        return res.status(500).json({ status: false, message: "Error creating production planning", error: error.message });
+    }
+}
+
+/** Get all production plannings with pagination
+ * Supports pagination, sorting, and searching by work order number and product name
+ */
+exports.GetAllProductionPlannings = async (req, res) => {
+    try {
+        // pagination params
+        const { wo_number, page = 1, limit = 10 } = req.query;
+        // get company_id from auth middleware
+        const company_id = req.user.company_id;
+
+        // Build where clause
+        const where = { company_id };
+
+        // search by work order number
+        if (wo_number) {
+            where.wo_number = { [Op.like]: `%${wo_number}%` };
+        }
+
+        // fetch the plannings with pagination and include product and variant details
+        const plannings = await ProductionPlanning.findAndCountAll({
+            attributes: ['id', 'wo_number', 'responsible_staff', 'required_qty', 'planned_qty', 'planned_start_date', 'planned_end_date', 'process_step', 'shift', 'created_at'],
+            where,
+            distinct: true,
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id', 'product_name', 'product_code'],
+                },
+                {
+                    association: 'finalProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label'],
+                        }
+                    ]
+                },
+                {
+                    association: 'createdBy',
+                    attributes: ['id', 'name'],
+                }
+            ],
+            order: [['created_at', 'DESC']],
+        });
+
+        // get paginated data
+        const paginatedData = CommonHelper.paginate(plannings, page, limit);
+
+        // return the plannings with pagination
+        return res.status(200).json({
+            status: true,
+            message: "Production plannings fetched successfully",
+            data: paginatedData,
+        });
+    } catch (error) {
+        console.error("Error fetching production plannings:", error);
+        return res.status(500).json({ status: false, message: "Error fetching production plannings", error: error.message });
+    }
+}
+
+/** Get production planning details by ID
+ * Returns planning details along with associated product and variant information
+ */
+exports.GetPlanningById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const company_id = req.user.company_id;
+
+        const planning = await ProductionPlanning.findOne({
+            where: { id, company_id },
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id', 'product_name', 'product_code'],
+                },
+                {
+                    association: 'finalProductVariant',
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [
+                        {
+                            association: 'masterUOM',
+                            attributes: ['id', 'label'],
+                        },
+                    ]
+                },
+                {
+                    association: 'createdBy',
+                    attributes: ['id', 'name'],
+                },
+            ],
+        });
+
+        if (!planning) {
+            return res.status(404).json({ status: false, message: "Production planning not found" });
+        }
+
+        return res.status(200).json({
+            status: true,
+            message: "Production planning fetched successfully",
+            data: planning,
+        });
+    } catch (error) {
+        console.error("Error fetching production planning:", error);
+        return res.status(500).json({ status: false, message: "Error fetching production planning", error: error.message });
+    }
+}
+
+/** Update production planning by ID
+ * Updates an existing planning row scoped to the authenticated user's company.
+ * Rejects wo_number conflicts with other planning rows of the same company.
+ */
+exports.UpdateProductionPlanning = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        const {
+            wo_number,
+            product_id,
+            responsible_staff,
+            final_product_variant_id,
+            required_quantity,
+            planned_quantity,
+            planned_start_date,
+            planned_end_date,
+            process_step,
+            shift,
+        } = req.body;
+
+        const company_id = req.user.company_id;
+        const isVariantBased = req.user.is_variant_based;
+
+        // validate required fields
+        if (!wo_number || !product_id) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "wo_number and product_id are required" });
+        } else if (isVariantBased && !final_product_variant_id) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "final_product_variant_id is required for variant based companies" });
+        }
+
+        // Find the planning row
+        const planning = await ProductionPlanning.findOne({
+            where: { id, company_id },
+            transaction,
+        });
+        if (!planning) {
+            await transaction.rollback();
+            return res.status(404).json({ status: false, message: "Production planning not found" });
+        }
+
+        // Reject wo_number collision with another planning row of the same company
+        const duplicate = await ProductionPlanning.findOne({
+            attributes: ['id'],
+            where: {
+                wo_number: wo_number.trim(),
+                company_id,
+                id: { [Op.ne]: planning.id },
+            },
+            transaction,
+        });
+        if (duplicate) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "Another production planning already exists for this work order number" });
+        }
+
+        // Update the planning row
+        await planning.update({
+            wo_number: wo_number.trim(),
+            responsible_staff: responsible_staff?.trim() || null,
+            product_id: Number(product_id),
+            final_product_variant_id: Number(final_product_variant_id) || null,
+            required_qty: parseInt(required_quantity) || 0,
+            planned_qty: parseInt(planned_quantity) || 0,
+            planned_start_date: planned_start_date || planning.planned_start_date,
+            planned_end_date: planned_end_date || planning.planned_end_date,
+            process_step: process_step || null,
+            shift: shift ? JSON.stringify(shift) : null,
+        }, { transaction });
+
+        await transaction.commit();
+
+        return res.status(200).json({ status: true, message: "Production planning updated successfully" });
+    } catch (error) {
+        console.error("Error updating production planning:", error);
+        await transaction.rollback();
+        return res.status(500).json({ status: false, message: "Error updating production planning", error: error.message });
+    }
+}
+
+/** Delete production planning by ID
+ * Deletes a planning row scoped to the authenticated user's company.
+ */
+exports.DeleteProductionPlanning = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        // get the planning ID
+        const { id } = req.params;
+        // get planning details
+        const planning = await ProductionPlanning.findOne({
+            where: { id, company_id: req.user.company_id },
+            transaction,
+        });
+        // if planning not found return with error
+        if (!planning) {
+            await transaction.rollback();
+            return res.status(404).json({ status: false, message: "Production planning not found" });
+        }
+
+        // delete associated actuals
+        await ProductionActuals.destroy({ where: { production_planning_id: planning.id }, transaction });
+
+        // delete the planning
+        await planning.destroy({ transaction });
+
+        // commit the transaction
+        await transaction.commit();
+
+        // Return with status 200 and message
+        return res.status(200).json({ 
+            status: true, 
+            message: "Production planning deleted successfully" 
+        });
+    } catch (error) {
+        console.error("Error deleting production planning:", error);
+        await transaction.rollback();
+        return res.status(500).json({ status: false, message: "Error deleting production planning", error: error.message });
+    }
+}
+
+/** Create production actuals entry for a planning ID
+ * Validations:
+ * - Planning ID must exist
+ * - completed_qty should not exceed the planned_qty of the associated planning
+ */
+exports.CreateProductionPlanningEntryRecord = async (req, res) => {
+    try {
+        // get the planning ID from params
+        const { planning_id } = req.params;
+        // get the input data from request body
+        const { completed_qty, work_shift, responsible_staff } = req.body;
+
+        // get planning details
+        const planning = await ProductionPlanning.findOne({
+            attributes: ['id'],
+            where: { id: planning_id },
+            raw: true,
+        });
+        // if planning not found return with error
+        if (!planning) {
+            return res.status(404).json({ status: false, message: "Production planning not found" });
+        }
+
+        // Create a new production actuals entry linked to the planning ID
+        await ProductionActuals.create({
+            production_planning_id: planning_id,
+            completed_qty,
+            work_shift: JSON.stringify(work_shift),
+            responsible_staff: responsible_staff?.trim() || null,
+            user_id: req.user.id,
+        });
+
+        // Return with status 200 and message
+        return res.status(200).json({
+            status: true,
+            message: "Production actuals entry created successfully",
+        });
+    } catch (error) {
+        console.error("Error creating production actuals entry:", error);
+        return res.status(500).json({ status: false, message: "Error creating production actuals entry", error: error.message });
+    }
+}
+
+/** Get production actuals entry records for a planning ID
+ * Returns a list of actuals entries linked to the planning ID, sorted by creation date (newest first)
+ */
+exports.GetProductionPlanningEntryRecordList = async (req, res) => {
+    try {
+        const { planning_id } = req.params;
+        const entryRecords = await ProductionActuals.findAll({
+            attributes: ['id', 'completed_qty', 'work_shift', 'responsible_staff', 'created_at'],
+            where: { production_planning_id: planning_id },
+            include: [
+                {
+                    association: 'user',
+                    attributes: ['id', 'name'],
+                }
+            ],
+            order: [['created_at', 'DESC']],
+        });
+        return res.status(200).json({
+            status: true,
+            message: "Production actuals entry records fetched successfully",
+            data: entryRecords,
+        });
+    } catch (error) {
+        console.error("Error fetching production actuals entry records:", error);
+        return res.status(500).json({ status: false, message: "Error fetching production actuals entry records", error: error.message });
+    }
+}

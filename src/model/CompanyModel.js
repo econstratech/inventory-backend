@@ -149,6 +149,11 @@ const GeneralSettings = sequelize.define(
       allowNull: true,
       defaultValue: 1,
     },
+    is_production_planning: {
+      type: DataTypes.SMALLINT,
+      allowNull: true,
+      defaultValue: 0,
+    },
   },
   {
     tableName: "general_settings",

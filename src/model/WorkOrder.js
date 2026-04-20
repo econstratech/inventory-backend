@@ -15,6 +15,10 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    production_planning_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     product_id: {
         type: DataTypes.BIGINT,
         allowNull: false,
@@ -25,10 +29,14 @@ const WorkOrder = sequelize.define('work_orders', {
     },
     customer_id: {
         type: DataTypes.BIGINT,
-        allowNull: false,
+        allowNull: true,
     },
     warehouse_id: {
         type: DataTypes.BIGINT,
+        allowNull: true,
+    },
+    required_quantity: {
+        type: DataTypes.INTEGER,
         allowNull: true,
     },
     planned_qty: {
@@ -52,6 +60,11 @@ const WorkOrder = sequelize.define('work_orders', {
         allowNull: false,
         defaultValue: 1,
         comment: '1: Pending, 2: In Progress, 3: Material Issued, 4: Completed, 5: Cancelled',
+    },
+    is_planned: {
+        type: DataTypes.SMALLINT,
+        allowNull: false,
+        defaultValue: 0,
     },
     dispatch_status: {
         type: DataTypes.SMALLINT,
@@ -92,6 +105,10 @@ const WorkOrder = sequelize.define('work_orders', {
     },
     production_completed_by: {
         type: DataTypes.BIGINT,
+        allowNull: true,
+    },
+    shift: {
+        type: DataTypes.STRING,
         allowNull: true,
     },
     created_at: {
