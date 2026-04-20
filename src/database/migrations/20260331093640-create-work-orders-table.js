@@ -47,7 +47,7 @@ exports.up = function(db) {
     },
     customer_id: { 
       type: 'bigint',
-      notNull: true,
+      notNull: false,
       foreignKey: {
         name: 'fk_work_orders_customer',
         table: 'customer',

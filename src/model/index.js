@@ -51,6 +51,8 @@ const WorkOrderMaterialIssue = require('./WorkOrderMaterialIssue');
 const ProductionActivityLog = require('./ProductionActivityLog');
 const CompanyProductionStep = require('./CompanyProductionStep');
 const WorkOrderDispatchLog = require('./WorkOrderDispatchLog');
+const ProductionPlanning = require('./ProductionPlanning');
+const ProductionActuals = require('./ProductionActuals');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -385,6 +387,7 @@ WorkOrder.belongsTo(ProductVariant, { foreignKey: 'final_product_variant_id', as
 WorkOrder.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
 WorkOrder.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 WorkOrder.belongsTo(CompanyProductionStep, { foreignKey: 'production_step_id', as: 'productionStep' });
+WorkOrder.belongsTo(ProductionPlanning, { foreignKey: 'production_planning_id', as: 'productionPlanning' });
 WorkOrder.hasMany(WorkOrderStep, { foreignKey: 'wo_id', as: 'workOrderSteps' });
 WorkOrder.hasMany(WorkOrderMaterialIssue, { foreignKey: 'wo_id', as: 'workOrderMaterialIssues' });
 WorkOrder.belongsTo(User, { foreignKey: 'material_issued_by', as: 'materialIssuedBy' });
@@ -404,6 +407,15 @@ ProductionActivityLog.belongsTo(Company, { foreignKey: 'company_id', as: 'compan
 
 WorkOrderDispatchLog.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
 WorkOrderDispatchLog.belongsTo(User, { foreignKey: 'dispatched_by', as: 'dispatchedBy' });
+
+ProductionPlanning.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+ProductionPlanning.belongsTo(ProductVariant, { foreignKey: 'final_product_variant_id', as: 'finalProductVariant' });
+ProductionPlanning.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+ProductionPlanning.hasOne(WorkOrder, { foreignKey: 'production_planning_id', as: 'workOrder' });
+ProductionPlanning.belongsTo(User, { foreignKey: 'user_id', as: 'createdBy' });
+
+ProductionActuals.belongsTo(ProductionPlanning, { foreignKey: 'production_planning_id', as: 'productionPlanning' });
+ProductionActuals.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
 module.exports = {
     Module,
@@ -454,5 +466,7 @@ module.exports = {
     WorkOrderMaterialIssue,
     ProductionActivityLog,
     CompanyProductionStep,
-    WorkOrderDispatchLog
+    WorkOrderDispatchLog,
+    ProductionPlanning,
+    ProductionActuals,
 };
