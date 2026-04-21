@@ -124,6 +124,10 @@ const Product = sequelize.define(
             type: DataTypes.SMALLINT,
             defaultValue: 0,
         },
+        has_master_pack: {
+            type: DataTypes.SMALLINT,
+            defaultValue: 0,
+        },
         user_id: {
             type: DataTypes.STRING,
             allowNull: true,
@@ -164,7 +168,6 @@ const Product = sequelize.define(
             type: DataTypes.INTEGER,
             allowNull: true,
         }
-
     },
     {
         tableName: 'product',

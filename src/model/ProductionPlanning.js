@@ -1,6 +1,5 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
-const { required } = require("joi");
 
 const ProductionPlanning = sequelize.define('production_planning', {
     id: {

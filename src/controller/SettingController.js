@@ -325,6 +325,7 @@ exports.fetchSettings = async (req, res) => {
                 'signature',
                 'min_purchase_amount',
                 'min_sale_amount',
+                'is_production_planning'
             ],
             where: {
                 company_id: req.user.company_id,
@@ -352,6 +353,7 @@ exports.fetchSettings = async (req, res) => {
             signature:fetchSettings.signature,
             min_purchase_amount: fetchSettings.min_purchase_amount,
             min_sale_amount: fetchSettings.min_sale_amount,
+            is_production_planning: fetchSettings.is_production_planning
         };
 
         // Return the response data

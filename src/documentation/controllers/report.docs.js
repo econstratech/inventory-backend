@@ -1758,3 +1758,139 @@
  *                 error:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/report/production/production-planning-vs-actual-report:
+ *   get:
+ *     summary: Get production planning vs actual report (employee-wise or shift-wise)
+ *     description: |
+ *       Aggregates `production_planning` vs `production_actuals` per responsible person or per shift.
+ *
+ *       - **Employee mode** (`type=employee`, default): groups by `production_planning.responsible_staff`.
+ *         `assigned_work_orders` is the row count of plannings per person, `planned_qty` is `SUM(planned_qty)`,
+ *         and `completed_qty` is `SUM(production_actuals.completed_qty)` linked via
+ *         `production_actuals.production_planning_id = production_planning.id`.
+ *         Completed quantity is pre-aggregated in a subquery so the one-to-many join does not inflate planned_qty.
+ *       - **Shift mode** (`type=shift`): groups by `production_actuals.work_shift`. `planned_qty` is counted once
+ *         per (shift, planning) pair so multiple actuals for the same planning within a shift do not inflate it.
+ *
+ *       Rows with null/empty group keys (no responsible_staff / no work_shift) are excluded.
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [employee, shift]
+ *           default: employee
+ *         description: Grouping mode. `employee` groups by responsible_staff; `shift` groups by work_shift.
+ *       - in: query
+ *         name: from_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: |
+ *           Filter actuals with `production_actuals.entry_date >= from_date`. Optional. Format `YYYY-MM-DD`.
+ *           In employee mode plannings with no actuals in this range still appear (completed_qty=0). In shift mode only shifts with at least one actual in the range appear.
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: to_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter actuals with `production_actuals.entry_date <= to_date`. Optional. Format `YYYY-MM-DD`.
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: Production planning vs actual report fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Production planning vs actual report fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       enum: [employee, shift]
+ *                       description: Echoes the requested grouping mode
+ *                       example: employee
+ *                     filters:
+ *                       type: object
+ *                       description: Echoes the applied date range filters
+ *                       properties:
+ *                         from_date:
+ *                           type: string
+ *                           nullable: true
+ *                           example: "2026-04-01"
+ *                         to_date:
+ *                           type: string
+ *                           nullable: true
+ *                           example: "2026-04-30"
+ *                     rows:
+ *                       type: array
+ *                       description: |
+ *                         In employee mode each row has a `responsible_staff` field.
+ *                         In shift mode each row has a `work_shift` field instead.
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           responsible_staff:
+ *                             type: string
+ *                             description: Present only when type=employee
+ *                             example: "Dev Anand"
+ *                           work_shift:
+ *                             type: string
+ *                             description: Present only when type=shift
+ *                             example: "Morning"
+ *                           assigned_work_orders:
+ *                             type: integer
+ *                             description: Count of work orders assigned to the group
+ *                             example: 5
+ *                           planned_qty:
+ *                             type: number
+ *                             description: Sum of planned quantity across the group
+ *                             example: 620
+ *                           completed_qty:
+ *                             type: number
+ *                             description: Sum of completed quantity (from production_actuals) across the group
+ *                             example: 540
+ *       400:
+ *         description: Invalid query param (type, from_date, to_date, or from_date > to_date)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Invalid from_date. Use YYYY-MM-DD format."
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting production planning vs actual report"
+ *                 error:
+ *                   type: string
+ */

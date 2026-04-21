@@ -144,6 +144,7 @@ ProductStockEntry.belongsTo(ProductVariant, {
 ProductVariant.hasMany(ProductStockEntry, { foreignKey: 'product_variant_id', as: 'productStockEntries' });
 ProductVariant.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
 ProductVariant.belongsTo(MasterUOM, { foreignKey: 'uom_id', as: 'masterUOM' });
+ProductVariant.belongsTo(MasterUOM, { foreignKey: 'pack_uom_id', as: 'masterPackUOM' });
 ProductVariant.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 ProductVariant.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
@@ -413,6 +414,7 @@ ProductionPlanning.belongsTo(ProductVariant, { foreignKey: 'final_product_varian
 ProductionPlanning.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 ProductionPlanning.hasOne(WorkOrder, { foreignKey: 'production_planning_id', as: 'workOrder' });
 ProductionPlanning.belongsTo(User, { foreignKey: 'user_id', as: 'createdBy' });
+ProductionPlanning.hasMany(ProductionActuals, { foreignKey: 'production_planning_id', as: 'productionActuals' });
 
 ProductionActuals.belongsTo(ProductionPlanning, { foreignKey: 'production_planning_id', as: 'productionPlanning' });
 ProductionActuals.belongsTo(User, { foreignKey: 'user_id', as: 'user' });

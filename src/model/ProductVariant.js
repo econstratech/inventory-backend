@@ -31,9 +31,22 @@ const ProductVariant = sequelize.define('product_variants', {
         type: DataTypes.INTEGER,
         notNull: true,
     },
+    quantity_per_pack: {
+        type: DataTypes.INTEGER,
+        notNull: false,
+    },
+    weight_per_pack: {
+        type: DataTypes.STRING,
+        length: 50,
+        notNull: false,
+    },
     price_per_unit: {
         type: DataTypes.DECIMAL,
         notNull: true,
+    },
+    pack_uom_id: {
+        type: DataTypes.INTEGER,
+        notNull: false,
     },
     status: {
         type: DataTypes.SMALLINT,
