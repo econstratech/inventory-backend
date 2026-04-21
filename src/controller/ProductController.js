@@ -526,6 +526,7 @@ exports.AddProduct = async (req, res) => {
     await ProductAttributeValue.bulkCreate(productAttributeValues, { transaction });
 
     // Save product variants if company is set to variant based
+    let hasMasterPack = false;
     const productVariants = [];
     if (isVariantBased) {
       product_variants.forEach((eachVariant) => {
@@ -534,10 +535,22 @@ exports.AddProduct = async (req, res) => {
           user_id: req.user.id,
           product_id: productData.id,
           uom_id: eachVariant.uom_id,
-          weight_per_unit: eachVariant.weight
+          weight_per_unit: eachVariant.weight,
+          pack_uom_id: eachVariant.pack_uom_id || null,
+          quantity_per_pack: eachVariant.quantity_per_pack || null,
+          weight_per_pack: eachVariant.weight_per_pack || null,
+          status: 1,
         });
+        if (eachVariant.pack_uom_id) {
+          hasMasterPack = true;
+        }
       });
       await ProductVariant.bulkCreate(productVariants, { transaction });
+    }
+
+    // If any of the variant has master pack details then update product has_master_pack field to 1
+    if (hasMasterPack) {
+      await Product.update({ has_master_pack: 1 }, { where: { id: productData.id }, transaction });
     }
 
     await transaction.commit();
@@ -794,7 +807,7 @@ exports.GetAllProducts = async (req, res) => {
         },
         {
           association: "productVariants",
-          attributes: ["id", "weight_per_unit", "price_per_unit", "uom_id"],
+          attributes: ["id", "weight_per_unit", "price_per_unit", "uom_id", "weight_per_pack", "quantity_per_pack", "pack_uom_id"],
           include: [
             {
               association: "masterUOM",
@@ -826,6 +839,7 @@ exports.GetAllProducts = async (req, res) => {
         "sku_product",
         "product_type_id",
         "is_batch_applicable",
+        "has_master_pack",
         "markup_percentage",
       ],
       where,
@@ -899,8 +913,6 @@ exports.GetAllDeletedProductsRestore = async (req, res) => {
   try {
     const { productIdsRestore } = req.body;
 
-    // console.log("Received productIds for restore:", productIdsRestore);
-
     if (!Array.isArray(productIdsRestore) || productIdsRestore.length === 0) {
       return res.status(400).json({ message: "Invalid or missing product IDs" });
     }
@@ -935,7 +947,8 @@ exports.GetProductDetails = async (req, res) => {
         'product_type_id',
         'product_category_id',
         'brand_id', 
-        'is_batch_applicable', 
+        'is_batch_applicable',
+        'has_master_pack',
         'markup_percentage'
       ],
       where: {
@@ -952,7 +965,7 @@ exports.GetProductDetails = async (req, res) => {
         },
         {
           association: 'productVariants',
-          attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
+          attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id', 'weight_per_pack', 'quantity_per_pack', 'pack_uom_id'],
           // include: [
           //   {
           //     association: 'masterUOM',
@@ -974,7 +987,6 @@ exports.GetProductDetails = async (req, res) => {
           association: 'productCategory',
           attributes: ['id', 'title'],
         }
-        // { model: MasteruomModel, as: "Masteruom", attributes: ["unit_name"] },
         // { model: TrackProductStock, as: "TrackProductStock" },
       ],
     });
@@ -1515,7 +1527,6 @@ exports.UpdateStockAndTrack = async (req, res) => {
     // Log incoming data to verify the structure
    
     for (const item of transferItems) {
-      //console.log('Processing item:', item); // Log each item
 
       if (item.itemID) {
         // Update total_stock for the matching product
@@ -3939,39 +3950,41 @@ exports.GetIndentRequiredProducts = async (req, res) => {
  * @param {Object} transaction - Transaction object
  * @returns {Promise<boolean>}
  */
-const updateProductVariants = async (productId, variant, user, transaction) => {
+const updateEachProductVariant = async (productId, variant, user, transaction) => {
   try {
-    const { uom_id, weight } = variant;
+    const {
+      id = null,
+      uom_id, 
+      weight, 
+      weight_per_pack = null,
+      quantity_per_pack = null,
+      pack_uom_id = null,
+    } = variant;
     const companyId = user.company_id;
     const userId = user.id;
 
-    // Check if variant exists for this product and UOM
-    const existingVariant = await ProductVariant.findOne({
-      attributes: ['id', 'price_per_unit'],
-      where: {
-        product_id: productId,
-        uom_id: uom_id,
-        company_id: companyId
-      },
-      transaction
-    });
+    // construct variant payload
+    const variantPayload = {
+      weight_per_unit: weight,
+      uom_id: uom_id,
+      weight_per_pack: weight_per_pack || null,
+      quantity_per_pack: quantity_per_pack || null,
+      pack_uom_id: pack_uom_id || null,
+    }
 
-    if (existingVariant) {
-      // Update existing variant
+    // If ID is provided, update the existing variant. Otherwise, create a new variant.
+    if (id) {
       await ProductVariant.update({
-        weight_per_unit: weight,
-        price_per_unit: existingVariant.price_per_unit || 0
-      }, { where: { id: existingVariant.id }, transaction });
+        ...variantPayload
+      }, { where: { id }, transaction });
     } else {
       // Create new variant
       await ProductVariant.create({
         product_id: productId,
-        uom_id: uom_id,
         company_id: companyId,
         user_id: userId,
-        weight_per_unit: weight,
-        price_per_unit: 0,
-        status: 1
+        status: 1,
+        ...variantPayload
       }, { transaction });
     }
     return true;
@@ -4131,7 +4144,7 @@ exports.UpdateProductVariants = async (req, res) => {
     // Update product variants
     const updateVariantPromises = [];
     product_variants.forEach(variant => {
-      updateVariantPromises.push(updateProductVariants(productId, variant, req.user, transaction));
+      updateVariantPromises.push(updateEachProductVariant(productId, variant, req.user, transaction));
     });
     // Execute update variant promises
     await Promise.all(updateVariantPromises);

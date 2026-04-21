@@ -41,9 +41,9 @@ exports.up = function(db) {
       planned_start_date: { type: 'date', notNull: true },
       planned_end_date: { type: 'date', notNull: true },
       process_step: { type: 'string', notNull: true },
-      created_at: { type: 'timestamp', defaultValue: new String('CURRENT_TIMESTAMP') },
-      updated_at: { type: 'timestamp', defaultValue: new String('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') },
-      deleted_at: { type: 'timestamp', defaultValue: null },
+      created_at: { type: 'timestamp', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP') },
+      updated_at: { type: 'timestamp', notNull: true, defaultValue: new String('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP') },
+      deleted_at: { type: 'timestamp', notNull: false },
     })
     .then(() => {
       return db.addColumn('work_orders', 'production_planning_id', {

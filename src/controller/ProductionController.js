@@ -1831,22 +1831,42 @@ exports.CreateProductionPlanning = async (req, res) => {
  */
 exports.GetAllProductionPlannings = async (req, res) => {
     try {
-        // pagination params
         const { wo_number, page = 1, limit = 10 } = req.query;
-        // get company_id from auth middleware
         const company_id = req.user.company_id;
 
-        // Build where clause
         const where = { company_id };
 
-        // search by work order number
         if (wo_number) {
             where.wo_number = { [Op.like]: `%${wo_number}%` };
         }
 
-        // fetch the plannings with pagination and include product and variant details
-        const plannings = await ProductionPlanning.findAndCountAll({
-            attributes: ['id', 'wo_number', 'responsible_staff', 'required_qty', 'planned_qty', 'planned_start_date', 'planned_end_date', 'process_step', 'shift', 'created_at'],
+        // 1. Get total count (NO include, NO group)
+        const rowCount = await ProductionPlanning.count({
+            where
+        });
+
+        // 2. Get paginated data with include and group for completed_qty sum
+        const plannings = await ProductionPlanning.findAll({
+            attributes: [
+                'id',
+                'wo_number',
+                'responsible_staff',
+                'required_qty',
+                'planned_qty',
+                'planned_start_date',
+                'planned_end_date',
+                'process_step',
+                'shift',
+                'created_at',
+                [
+                    sequelize.fn(
+                        'COALESCE',
+                        sequelize.fn('SUM', sequelize.col('productionActuals.completed_qty')),
+                        0
+                    ),
+                    'total_completed_qty'
+                ]
+            ],
             where,
             distinct: true,
             include: [
@@ -1867,25 +1887,43 @@ exports.GetAllProductionPlannings = async (req, res) => {
                 {
                     association: 'createdBy',
                     attributes: ['id', 'name'],
+                },
+                {
+                    association: 'productionActuals', // <-- IMPORTANT
+                    attributes: [], // don't fetch rows, just aggregate
+                    required: false // LEFT JOIN
                 }
             ],
+            group: [
+                'production_planning.id',
+                'product.id',
+                'finalProductVariant.id',
+                'finalProductVariant->masterUOM.id',
+                'createdBy.id'
+            ],
             order: [['created_at', 'DESC']],
+            subQuery: false
         });
 
-        // get paginated data
-        const paginatedData = CommonHelper.paginate(plannings, page, limit);
+        // Get paginated data
+        const paginatedData = CommonHelper.paginate({ rows: plannings, count: rowCount }, page, limit);
 
-        // return the plannings with pagination
+        // Return the paginated production plannings
         return res.status(200).json({
             status: true,
             message: "Production plannings fetched successfully",
             data: paginatedData,
         });
+
     } catch (error) {
         console.error("Error fetching production plannings:", error);
-        return res.status(500).json({ status: false, message: "Error fetching production plannings", error: error.message });
+        return res.status(500).json({
+            status: false,
+            message: "Error fetching production plannings",
+            error: error.message
+        });
     }
-}
+};
 
 /** Get production planning details by ID
  * Returns planning details along with associated product and variant information
@@ -2066,7 +2104,7 @@ exports.CreateProductionPlanningEntryRecord = async (req, res) => {
         // get the planning ID from params
         const { planning_id } = req.params;
         // get the input data from request body
-        const { completed_qty, work_shift, responsible_staff } = req.body;
+        const { completed_qty, work_shift, responsible_staff, entry_date } = req.body;
 
         // get planning details
         const planning = await ProductionPlanning.findOne({
@@ -2083,9 +2121,10 @@ exports.CreateProductionPlanningEntryRecord = async (req, res) => {
         await ProductionActuals.create({
             production_planning_id: planning_id,
             completed_qty,
-            work_shift: JSON.stringify(work_shift),
+            work_shift: work_shift,
             responsible_staff: responsible_staff?.trim() || null,
             user_id: req.user.id,
+            entry_date: new Date(entry_date) || null,
         });
 
         // Return with status 200 and message
@@ -2106,7 +2145,7 @@ exports.GetProductionPlanningEntryRecordList = async (req, res) => {
     try {
         const { planning_id } = req.params;
         const entryRecords = await ProductionActuals.findAll({
-            attributes: ['id', 'completed_qty', 'work_shift', 'responsible_staff', 'created_at'],
+            attributes: ['id', 'completed_qty', 'work_shift', 'responsible_staff', 'entry_date', 'created_at'],
             where: { production_planning_id: planning_id },
             include: [
                 {

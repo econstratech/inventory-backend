@@ -1404,3 +1404,163 @@ exports.getMaterialIssueReport = async (req, res) => {
     });
   }
 };
+
+/**
+ * Production planning vs actual report, grouped by responsible_staff (employee) or work_shift.
+ * GET /api/report/production/production-planning-vs-actual-report?type=employee|shift
+ *
+ * For employee mode:
+ *   - Groups production_planning rows by responsible_staff.
+ *   - planned_qty inflation from the one-to-many join to production_actuals is avoided
+ *     by pre-aggregating completed_qty in a subquery before joining back.
+ *
+ * For shift mode:
+ *   - Groups by production_actuals.work_shift.
+ *   - planned_qty for a planning is counted once per shift it appeared in (via MAX in the
+ *     inner subquery), so multiple actuals rows for the same planning-shift pair don't inflate it.
+ */
+exports.getProductionPlanningVsActualReport = async (req, res) => {
+  try {
+    const company_id = req.user.company_id;
+    const { type = "employee", from_date, to_date } = req.query;
+
+    // Validate type parameter
+    const normalizedType = String(type).toLowerCase();
+    if (!["employee", "shift"].includes(normalizedType)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid type. Allowed values: 'employee' or 'shift'",
+      });
+    }
+
+    // Validate optional date range filters (applied to production_actuals.entry_date)
+    const isValidDate = (d) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(new Date(d).getTime());
+    if (from_date && !isValidDate(from_date)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid from_date. Use YYYY-MM-DD format.",
+      });
+    }
+    // to_date can be empty but if provided it must be valid
+    if (to_date && !isValidDate(to_date)) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid to_date. Use YYYY-MM-DD format.",
+      });
+    }
+    // If both dates are provided, from_date should not be after to_date
+    if (from_date && to_date && from_date > to_date) {
+      return res.status(400).json({
+        status: false,
+        message: "from_date must be on or before to_date.",
+      });
+    }
+
+    // Base replacements for company_id and optional date filters
+    const replacements = { companyId: company_id };
+    let dateFilter = "";
+    if (from_date) {
+      dateFilter += " AND pa.entry_date >= :fromDate";
+      replacements.fromDate = from_date;
+    }
+    if (to_date) {
+      dateFilter += " AND pa.entry_date <= :toDate";
+      replacements.toDate = to_date;
+    }
+
+    let query;
+    let keyField;
+
+    // For employee grouping, we LEFT JOIN the aggregated actuals to include plannings without any actuals in the date range (they will show as 0 completed_qty). For shift grouping, we INNER JOIN to only include shifts that have actuals in the date range.
+    if (normalizedType === "employee") {
+      keyField = "responsible_staff";
+      // If date filters are applied, use INNER JOIN to only include plannings with matching actuals in the date range.
+      const join_type = from_date || to_date ? "INNER JOIN" : "LEFT JOIN";
+      query = `
+        SELECT
+          pp.responsible_staff AS responsible_staff,
+          COUNT(pp.id) AS assigned_work_orders,
+          COALESCE(SUM(pp.planned_qty), 0) AS planned_qty,
+          COALESCE(SUM(pa_sum.completed_qty_sum), 0) AS completed_qty
+        FROM production_planning pp
+        ${join_type} (
+          SELECT pa.production_planning_id, SUM(pa.completed_qty) AS completed_qty_sum
+          FROM production_actuals pa
+          WHERE pa.deleted_at IS NULL
+            ${dateFilter}
+          GROUP BY pa.production_planning_id
+        ) pa_sum ON pa_sum.production_planning_id = pp.id
+        WHERE pp.company_id = :companyId
+          AND pp.deleted_at IS NULL
+          AND pp.responsible_staff IS NOT NULL
+          AND pp.responsible_staff <> ''
+        GROUP BY pp.responsible_staff
+        ORDER BY pp.responsible_staff ASC
+      `;
+    } else {
+      keyField = "work_shift";
+      query = `
+        SELECT
+          sub.work_shift AS work_shift,
+          COUNT(sub.production_planning_id) AS assigned_work_orders,
+          COALESCE(SUM(sub.distinct_planned_qty), 0) AS planned_qty,
+          COALESCE(SUM(sub.completed_qty_in_shift), 0) AS completed_qty
+        FROM (
+          SELECT
+            pa.work_shift,
+            pa.production_planning_id,
+            MAX(pp.planned_qty) AS distinct_planned_qty,
+            SUM(pa.completed_qty) AS completed_qty_in_shift
+          FROM production_actuals pa
+          INNER JOIN production_planning pp ON pp.id = pa.production_planning_id
+          WHERE pp.company_id = :companyId
+            AND pp.deleted_at IS NULL
+            AND pa.deleted_at IS NULL
+            AND pa.work_shift IS NOT NULL
+            AND pa.work_shift <> ''
+            ${dateFilter}
+          GROUP BY pa.work_shift, pa.production_planning_id
+        ) sub
+        GROUP BY sub.work_shift
+        ORDER BY sub.work_shift ASC
+      `;
+    }
+
+    // Execute the query
+    const rows = await sequelize.query(query, {
+      replacements,
+      type: QueryTypes.SELECT,
+      raw: true,
+    });
+
+    // Normalize data types and handle nulls
+    const data = rows.map((r) => ({
+      [keyField]: r[keyField] || "",
+      assigned_work_orders: Number(r.assigned_work_orders) || 0,
+      planned_qty: r.planned_qty != null ? Number(r.planned_qty) : 0,
+      completed_qty: r.completed_qty != null ? Number(r.completed_qty) : 0,
+    }));
+
+    // Return the response
+    return res.status(200).json({
+      status: true,
+      message: "Production planning vs actual report fetched successfully",
+      data: {
+        type: normalizedType,
+        filters: {
+          from_date: from_date || null,
+          to_date: to_date || null,
+        },
+        rows: data,
+      },
+    });
+  } catch (error) {
+    console.error("Get production planning vs actual report error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Error getting production planning vs actual report",
+      error: error.message,
+    });
+  }
+};

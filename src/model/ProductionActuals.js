@@ -27,6 +27,10 @@ const ProductionActuals = sequelize.define('production_actuals', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    entry_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+    }
 }, {
     tableName: 'production_actuals',
     timestamps: true,
