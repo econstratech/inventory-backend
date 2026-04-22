@@ -1831,19 +1831,55 @@ exports.CreateProductionPlanning = async (req, res) => {
  */
 exports.GetAllProductionPlannings = async (req, res) => {
     try {
-        const { wo_number, page = 1, limit = 10 } = req.query;
+        const { 
+            wo_number,
+            responsible_staff,
+            from_date,
+            to_date,
+            product_id, 
+            page = 1, 
+            limit = 10, 
+        } = req.query;
         const company_id = req.user.company_id;
 
         const where = { company_id };
 
+        // Filter by wo_number and responsible_staff if provided (partial match)
         if (wo_number) {
             where.wo_number = { [Op.like]: `%${wo_number}%` };
         }
+        if (responsible_staff) {
+            where.responsible_staff = { [Op.like]: `%${responsible_staff}%` };
+        }
+        // Filter by product_id (exact match on production_planning.product_id = product.id)
+        if (product_id) {
+            where.product_id = product_id;
+        }
 
-        // 1. Get total count (NO include, NO group)
-        const rowCount = await ProductionPlanning.count({
-            where
-        });
+        // Date filter mirrors the Production Planning vs Actual report:
+        // restrict to plannings that have at least one production_actuals row with
+        // entry_date inside the range. When applied, the SUM also only aggregates
+        // in-range actuals so total_completed_qty stays consistent with the report.
+        const hasDateFilter = Boolean(from_date || to_date);
+        const actualsEntryDateWhere = {};
+        if (from_date) actualsEntryDateWhere[Op.gte] = from_date;
+        if (to_date) actualsEntryDateWhere[Op.lte] = to_date;
+        const actualsWhere = hasDateFilter ? { entry_date: actualsEntryDateWhere } : undefined;
+
+        // 1. Get total count. When a date filter is applied, join on actuals so
+        //    only plannings with in-range entries are counted.
+        const countOptions = { where };
+        if (hasDateFilter) {
+            countOptions.include = [{
+                association: 'productionActuals',
+                attributes: [],
+                required: true,
+                where: actualsWhere,
+            }];
+            countOptions.distinct = true;
+            countOptions.col = 'id';
+        }
+        const rowCount = await ProductionPlanning.count(countOptions);
 
         // 2. Get paginated data with include and group for completed_qty sum
         const plannings = await ProductionPlanning.findAll({
@@ -1891,7 +1927,8 @@ exports.GetAllProductionPlannings = async (req, res) => {
                 {
                     association: 'productionActuals', // <-- IMPORTANT
                     attributes: [], // don't fetch rows, just aggregate
-                    required: false // LEFT JOIN
+                    required: hasDateFilter, // INNER JOIN when date filter is applied; LEFT JOIN otherwise
+                    ...(hasDateFilter ? { where: actualsWhere } : {}),
                 }
             ],
             group: [
