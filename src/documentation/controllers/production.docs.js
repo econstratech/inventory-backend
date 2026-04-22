@@ -2074,6 +2074,7 @@
  *     description: |
  *       Returns paginated `ProductionPlanning` rows for the authenticated user's company, ordered by `created_at` DESC.
  *       Each row includes nested `product` (id, name, code), `finalProductVariant` (id, weight_per_unit + nested `masterUOM`), and `createdBy` (id, name).
+ *       Each row also includes `total_completed_qty` — the `COALESCE(SUM(productionActuals.completed_qty), 0)` aggregate across all related `ProductionActual` rows (LEFT JOIN, so rows with no actuals return `0`).
  *       The `shift` field is stored as a JSON-stringified array (e.g. `'["day","night"]'`); clients should `JSON.parse` it before use.
  *     tags: [Production]
  *     security:
@@ -2101,6 +2102,33 @@
  *           type: string
  *         description: Partial match on `wo_number` (SQL `LIKE %value%`)
  *         example: "WO171360"
+ *       - in: query
+ *         name: responsible_staff
+ *         schema:
+ *           type: string
+ *         description: Partial match on `responsible_staff` (SQL `LIKE %value%`)
+ *         example: "Dev Anand"
+ *       - in: query
+ *         name: product_id
+ *         schema:
+ *           type: integer
+ *         description: Exact match on `production_planning.product_id` (i.e. `product.id`)
+ *         example: 12234
+ *       - in: query
+ *         name: from_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: |
+ *           Lower bound (inclusive) for `production_actuals.entry_date`. When either `from_date` or `to_date` is supplied, the query switches to an INNER JOIN on `production_actuals`, so only plannings with at least one actual whose `entry_date` falls in the range are returned. `total_completed_qty` also aggregates only the in-range actuals. This mirrors the Production Planning vs Actual report so counts line up between the two endpoints.
+ *         example: "2026-01-22"
+ *       - in: query
+ *         name: to_date
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Upper bound (inclusive) for `production_actuals.entry_date`. See `from_date` for join/aggregate semantics.
+ *         example: "2026-04-22"
  *     responses:
  *       200:
  *         description: Production plannings fetched successfully
@@ -2158,12 +2186,20 @@
  *                           wo_number:
  *                             type: string
  *                             example: "WO1713600000000"
+ *                           responsible_staff:
+ *                             type: string
+ *                             nullable: true
+ *                             example: "Dev Anand"
  *                           required_qty:
  *                             type: number
  *                             example: 100
  *                           planned_qty:
  *                             type: number
  *                             example: 80
+ *                           total_completed_qty:
+ *                             type: number
+ *                             description: "Aggregate `COALESCE(SUM(productionActuals.completed_qty), 0)` across all related `ProductionActual` rows. `0` when no actuals exist."
+ *                             example: 60
  *                           planned_start_date:
  *                             type: string
  *                             format: date
