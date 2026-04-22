@@ -805,7 +805,7 @@ exports.getPurchase = async (req, res) => {
               include: [
                 {
                   association: "product",
-                  attributes: ['id', 'product_code', 'product_name', 'sku_product'],
+                  attributes: ['id', 'product_code', 'product_name', 'sku_product', 'has_master_pack'],
                 }
               ],
             },
@@ -821,7 +821,7 @@ exports.getPurchase = async (req, res) => {
           include: [
             {
               association: "productVariant",
-              attributes: ['id', 'weight_per_unit', 'price_per_unit'],
+              attributes: ['id', 'weight_per_unit', 'price_per_unit', 'pack_uom_id', 'weight_per_pack', 'quantity_per_pack'],
               include: [
                 {
                   association: 'masterUOM',
@@ -853,7 +853,8 @@ exports.getPurchase = async (req, res) => {
                 'product_name',
                 'sku_product',
                 'buffer_size',
-                'is_batch_applicable'
+                'is_batch_applicable',
+                'has_master_pack'
               ],
               include: [
                 { association: 'masterProductType', attributes: ['name'] },
@@ -871,7 +872,7 @@ exports.getPurchase = async (req, res) => {
                 }, 
                 {
                   association: 'productVariants',
-                  attributes: ['id', 'weight_per_unit', 'price_per_unit'],
+                  attributes: ['id', 'weight_per_unit', 'price_per_unit', 'pack_uom_id', 'weight_per_pack', 'quantity_per_pack'],
                   include: [
                     {
                       association: 'masterUOM',
@@ -1166,7 +1167,14 @@ exports.getPurchasecompareManagment = async (req, res) => {
           include: [
             {
               association: "productVariant",
-              attributes: ['id', 'weight_per_unit', 'price_per_unit'],
+              attributes: [
+                'id', 
+                'weight_per_unit', 
+                'price_per_unit', 
+                'pack_uom_id',
+                'weight_per_pack',
+                'quantity_per_pack'
+              ],
               include: [
                 {
                   association: 'masterUOM',
@@ -1182,6 +1190,7 @@ exports.getPurchasecompareManagment = async (req, res) => {
                 'sku_product', 
                 'product_code',
                 'is_batch_applicable',
+                'has_master_pack'
               ],
               include: [
                 {
