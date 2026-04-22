@@ -4007,7 +4007,7 @@ exports.GetProductVariants = async (req, res) => {
 
     // Check if product exists and belongs to the company
     const product = await Product.findOne({
-      attributes: ['id', 'product_code', 'product_name'],
+      attributes: ['id', 'product_code', 'product_name', 'has_master_pack'],
       where: {
         id: productId,
         company_id: companyId
@@ -4057,8 +4057,11 @@ exports.GetProductVariants = async (req, res) => {
       attributes: [
         'id',
         'uom_id',
+        'pack_uom_id',
         'weight_per_unit',
         'price_per_unit',
+        'weight_per_pack',
+        'quantity_per_pack',
         'status',
         'created_at',
         'updated_at'
