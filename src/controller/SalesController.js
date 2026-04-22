@@ -750,7 +750,8 @@ exports.getSalesQuotation = async (req, res) => {
   try {
     const { id } = req.params;
     const { type } = req.query;
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+
+    const isVariantBased = req.user.is_variant_based;
 
     const relationsWithIndividualProduct = [
       {
@@ -770,7 +771,7 @@ exports.getSalesQuotation = async (req, res) => {
       ...(isVariantBased ? [
       {
         association: 'productVariants',
-        attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
+        attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id', 'pack_uom_id', 'quantity_per_pack', 'weight_per_pack', 'weight_per_unit'],
         include: [
           {
             association: 'masterUOM',
@@ -846,7 +847,7 @@ exports.getSalesQuotation = async (req, res) => {
           ] : []),
           { 
             association: 'productData',
-            attributes: ['id', 'product_name', 'product_code', 'sku_product'],
+            attributes: ['id', 'product_name', 'product_code', 'sku_product', 'has_master_pack'],
             include: [
               ...relationsWithIndividualProduct
             ]
@@ -854,7 +855,7 @@ exports.getSalesQuotation = async (req, res) => {
           ...(isVariantBased ? [
             {
             association: 'productVariant',
-            attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id'],
+            attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id', 'pack_uom_id', 'quantity_per_pack', 'weight_per_pack', 'weight_per_unit'],
             include: [
               {
                 association: 'masterUOM',
@@ -1100,7 +1101,7 @@ exports.StatusUpdate = async (req, res) => {
       status: saleOrderStatus,
     };
 
-    const purchaseProducts = await SalesProduct.findAll({
+    const saleOrderProducts = await SalesProduct.findAll({
       attributes: ['id', 'status', 'warehouse_id', 'qty'],
       where: {
         sales_id: saleOrderId,
@@ -1124,125 +1125,14 @@ exports.StatusUpdate = async (req, res) => {
       ],
     });
 
-    // const updateProductstockEntries = [];
-    // // Add quantity to the product stock entries
-    // if (parsedStatus === 3) {
-    //   for (const product of purchaseProducts) {
-    //     product.productData.productStockEntries.forEach(entry => {
-    //       updateProductstockEntries.push({
-    //         id: entry.id,
-    //         company_id: req.user.company_id,
-    //         product_id: entry.product_id,
-    //         warehouse_id: entry.warehouse_id,
-    //         sale_order_recieved:
-    //           entry.sale_order_recieved + entry.quantity
-    //       });
-    //     });
-    //   }
-    // }
-    
-    // if (updateProductstockEntries.length > 0) {
-    //   await ProductStockEntry.bulkCreate(updateProductstockEntries, {
-    //     updateOnDuplicate: ['sale_order_recieved'],
-    //     transaction,
-    //   });
-    // }
-
-    if (!purchaseProducts || purchaseProducts.length === 0) {
-      return res.status(400).json({ message: "No products found for this purchase." });
+    if (!saleOrderProducts || saleOrderProducts.length === 0) {
+      return res.status(400).json({ status: false, message: "Products associated with this sale order are not in stock." });
     } else {
       await SalesProduct.update(updateFieldsPdata, {
         where: { sales_id: saleOrderId },
         transaction,
       });
     }
-    //   const generateInvoiceNumber = () => {
-    //     const datePart = new Date()
-    //       .toISOString()
-    //       .slice(0, 10)
-    //       .replace(/-/g, "");
-    //     const randomPart = Math.floor(1000 + Math.random() * 9000);
-    //     return `INV${datePart}${randomPart}`;
-    //   };
-
-    //   const invoiceNumber = generateInvoiceNumber();
-
-    //   await PurchaseProduct.update(
-    //     {
-    //       production_status: 5,
-    //       is_dispatched: true,
-    //       is_invoice: true,
-    //       invoice_number: invoiceNumber,
-    //       invoice_date: new Date(),
-    //     },
-    //     {
-    //       where: {
-    //         sales_id: purchaseId,
-    //       },
-    //     }
-    //   );
-
-    //   // 4. Update TrackProductStock for each item
-    //   for (const item of purchaseProducts) {
-    //     const {
-    //       product_id,
-    //       qty,
-    //       product: { product_name, unit, product_price },
-    //     } = item;
-
-    //     if (!qty) {
-    //       return res.status(400).json({
-    //         message: `Product quantity is missing for ${product_name}`,
-    //       });
-    //     }
-
-    //     const reference_number = generateReferenceNumber();
-    //     const barcode_number = generateBarcodeNumber();
-
-    // const totalIn = await TrackProductStock.sum("quantity_changed", {
-    //   where: {
-    //     product_id,
-    //     company_id: req.user.company_id,
-    //     status_in_out: 1,
-    //   },
-    // });
-
-    // const totalOut = await TrackProductStock.sum("quantity_changed", {
-    //   where: {
-    //     product_id,
-    //     company_id: req.user.company_id,
-    //     status_in_out: 0,
-    //   },
-    // });
-
-    // const currentStock = (totalIn || 0) - (totalOut || 0);
-    // const final_quantity = currentStock - qty;
-
-    //     if (final_quantity < 0) {
-    //       return res.status(400).json({
-    //         message: `Insufficient stock for ${product_name}`,
-    //       });
-    //     }
-
-    //     await TrackProductStock.create({
-    //       product_id,
-    //       item_name: product_name,
-    //       default_price: product_price,
-    //       item_unit: unit,
-    //       store_id,
-    //       quantity_changed: qty,
-    //       status_in_out: 0, // OUT
-    //       reference_number,
-    //       barcode_number,
-    //       user_id: req.user.id,
-    //       company_id: req.user.company_id,
-    //       adjustmentType: "Delivery to User",
-    //       final_quantity,
-    //     });
-    //   }
-    // }
-
-    // end the update
 
     await Sale.update(updateFields, {
       where: { id: saleOrderId },
