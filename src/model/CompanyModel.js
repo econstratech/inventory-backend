@@ -154,6 +154,11 @@ const GeneralSettings = sequelize.define(
       allowNull: true,
       defaultValue: 0,
     },
+    production_without_bom: {
+      type: DataTypes.SMALLINT,
+      allowNull: false,
+      defaultValue: 0,
+    }
   },
   {
     tableName: "general_settings",

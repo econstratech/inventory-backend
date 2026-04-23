@@ -253,6 +253,7 @@ exports.GeneralSettings = async (req, res) => {
         signature,
         minimum_po_approval_amount,
         minimum_so_approval_amount,
+        is_production_planning
       } = req.body;
   
       // Check if the record exists, if exists then update the record else create a new record
@@ -273,6 +274,7 @@ exports.GeneralSettings = async (req, res) => {
             enableBatchNumber,
             template,
             signature, // Add signature field
+            is_production_planning,
             min_purchase_amount: minimum_po_approval_amount,
             min_sale_amount: minimum_so_approval_amount,
           },
@@ -294,7 +296,8 @@ exports.GeneralSettings = async (req, res) => {
           enableBatchNumber,
           template,
           company_id: companyId,
-          signature, 
+          signature,
+          is_production_planning, 
           min_purchase_amount: minimum_po_approval_amount,
           min_sale_amount: minimum_so_approval_amount,
         });

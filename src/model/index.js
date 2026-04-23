@@ -53,6 +53,7 @@ const CompanyProductionStep = require('./CompanyProductionStep');
 const WorkOrderDispatchLog = require('./WorkOrderDispatchLog');
 const ProductionPlanning = require('./ProductionPlanning');
 const ProductionActuals = require('./ProductionActuals');
+const WorkOrderMaterialMapping = require('./WorkOrderMaterialMapping');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -419,6 +420,11 @@ ProductionPlanning.hasMany(ProductionActuals, { foreignKey: 'production_planning
 ProductionActuals.belongsTo(ProductionPlanning, { foreignKey: 'production_planning_id', as: 'productionPlanning' });
 ProductionActuals.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+WorkOrderMaterialMapping.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+WorkOrderMaterialMapping.belongsTo(Product, { foreignKey: 'fg_product_id', as: 'fgProduct' });
+WorkOrderMaterialMapping.belongsTo(ProductVariant, { foreignKey: 'fg_product_variant_id', as: 'fgProductVariant' });
+WorkOrderMaterialMapping.belongsTo(Product, { foreignKey: 'rm_product_id', as: 'rmProduct' });
+
 module.exports = {
     Module,
     Role,
@@ -471,4 +477,5 @@ module.exports = {
     WorkOrderDispatchLog,
     ProductionPlanning,
     ProductionActuals,
+    WorkOrderMaterialMapping
 };
