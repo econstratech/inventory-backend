@@ -119,6 +119,157 @@
 
 /**
  * @swagger
+ * /api/production/work-order/create-multiple:
+ *   post:
+ *     summary: Create multiple work orders in one request
+ *     description: |
+ *       Creates several work orders in a single database transaction for the authenticated user's company.
+ *       For each entry, auto-generates `wo_number`, sets `status` to `1` (Pending), and `progress_percent` to `0`.
+ *       Optionally creates `work_order_steps` rows per entry when non-empty, and updates `inventory_at_production`
+ *       on the matching `ProductStockEntry` when `warehouse_id` is provided.
+ *       If any entry fails, the entire batch is rolled back.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - work_orders
+ *             properties:
+ *               work_orders:
+ *                 type: array
+ *                 description: List of work orders to create (processed in order within one transaction).
+ *                 minItems: 1
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - customer_id
+ *                     - warehouse_id
+ *                     - product_id
+ *                     - planned_qty
+ *                     - due_date
+ *                     - production_step_id
+ *                   properties:
+ *                     customer_id:
+ *                       type: integer
+ *                       description: Customer ID
+ *                       example: 125
+ *                     warehouse_id:
+ *                       type: integer
+ *                       description: Warehouse/store ID (finished goods store)
+ *                       example: 10
+ *                     product_id:
+ *                       type: integer
+ *                       description: Product ID
+ *                       example: 12234
+ *                     planned_qty:
+ *                       type: number
+ *                       description: Planned production quantity
+ *                       example: 80
+ *                     due_date:
+ *                       type: string
+ *                       format: date
+ *                       description: Planned due date
+ *                       example: "2026-03-31"
+ *                     production_step_id:
+ *                       type: integer
+ *                       description: Current / primary production step (master step id).
+ *                       example: 1
+ *                     final_product_variant_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Required when company is variant-based (if applicable)
+ *                     work_order_steps:
+ *                       type: array
+ *                       description: Ordered steps for this work order. Omit or send empty array if none.
+ *                       items:
+ *                         type: object
+ *                         required:
+ *                           - step_id
+ *                           - sequence
+ *                         properties:
+ *                           step_id:
+ *                             type: integer
+ *                             example: 1
+ *                           sequence:
+ *                             type: integer
+ *                             example: 1
+ *           example:
+ *             work_orders:
+ *               - customer_id: 125
+ *                 warehouse_id: 10
+ *                 product_id: 12234
+ *                 planned_qty: 80
+ *                 due_date: "2026-03-31"
+ *                 production_step_id: 1
+ *                 work_order_steps:
+ *                   - step_id: 1
+ *                     sequence: 1
+ *                   - step_id: 6
+ *                     sequence: 2
+ *               - customer_id: 126
+ *                 warehouse_id: 10
+ *                 product_id: 12240
+ *                 planned_qty: 120
+ *                 due_date: "2026-04-10"
+ *                 production_step_id: 1
+ *                 work_order_steps:
+ *                   - step_id: 1
+ *                     sequence: 1
+ *     responses:
+ *       200:
+ *         description: Work orders created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Work orders created successfully"
+ *                 count:
+ *                   type: integer
+ *                   description: Number of work orders created
+ *                   example: 2
+ *                 data:
+ *                   type: array
+ *                   description: Newly created work order rows (each includes auto-set company_id, wo_number, status, progress_percent)
+ *                   items:
+ *                     type: object
+ *       400:
+ *         description: Invalid or empty work_orders array
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "work_orders must be a non-empty array"
+ *       500:
+ *         description: Internal server error (entire batch rolled back)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/export:
  *   get:
  *     summary: Export work orders as CSV

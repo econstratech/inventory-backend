@@ -1,6 +1,7 @@
 const express = require("express");
 const {
     CreateWorkOrder,
+    CreateMultipleWorkOrders,
     GetAllWorkOrders,
     DeleteWorkOrder,
     GetBOMListForWorkOrder,
@@ -33,6 +34,7 @@ const { authToken } = require("../utils/Middleware");
 const router = express.Router();
 
 router.post('/work-order/create', authToken, CreateWorkOrder);
+router.post('/work-order/create-multiple', authToken, CreateMultipleWorkOrders);
 router.get('/work-order/stats', authToken, GetWorkOrderStats);
 router.get('/work-order/export', authToken, ExportWorkOrders);
 router.get('/work-order/list', authToken, GetAllWorkOrders);

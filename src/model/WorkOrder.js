@@ -61,6 +61,10 @@ const WorkOrder = sequelize.define('work_orders', {
         defaultValue: 1,
         comment: '1: Pending, 2: In Progress, 3: Material Issued, 4: Completed, 5: Cancelled',
     },
+    sales_id: {
+        type: DataTypes.BIGINT,
+        allowNull: true,
+    },
     is_planned: {
         type: DataTypes.SMALLINT,
         allowNull: false,

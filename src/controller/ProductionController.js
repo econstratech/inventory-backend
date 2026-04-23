@@ -81,6 +81,84 @@ exports.CreateWorkOrder = async (req, res) => {
 }
 
 /**
+ * Create multiple work orders in a single transaction
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>} - Returns a promise that resolves to void
+ */
+exports.CreateMultipleWorkOrders = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const workOrdersInput = Array.isArray(req.body?.work_orders) ? req.body.work_orders : null;
+        if (!workOrdersInput || workOrdersInput.length === 0) {
+            await transaction.rollback();
+            return res.status(400).json({
+                status: false,
+                message: "work_orders must be a non-empty array",
+            });
+        }
+
+        const createdWorkOrders = [];
+
+        for (let index = 0; index < workOrdersInput.length; index++) {
+            const input = workOrdersInput[index];
+
+            // generate 6 digit unique reference number per work order
+            const referenceNumber = CommonHelper.generateUniqueReferenceNumber("WO", 6);
+            const wo_payload = {
+                ...input,
+                company_id: req.user.company_id,
+                wo_number: referenceNumber,
+                status: 1, // 1: Pending
+                progress_percent: 0,
+            };
+
+            const workOrder = await WorkOrder.create(wo_payload, { transaction });
+
+            const steps = Array.isArray(input.work_order_steps) ? input.work_order_steps : [];
+            if (steps.length > 0) {
+                const workOrderSteps = steps.map(step => ({
+                    wo_id: workOrder.id,
+                    step_id: step.step_id,
+                    sequence: step.sequence,
+                }));
+                await WorkOrderStep.bulkCreate(workOrderSteps, { transaction });
+            }
+
+            // if warehouse_id is provided then update the inventory_at_production in product stock entry
+            if (wo_payload.warehouse_id) {
+                await ProductStockEntry.update(
+                    { inventory_at_production: wo_payload.planned_qty },
+                    {
+                        where: {
+                            product_id: wo_payload.product_id,
+                            warehouse_id: wo_payload.warehouse_id,
+                            ...(wo_payload.final_product_variant_id ? { product_variant_id: wo_payload.final_product_variant_id } : {}),
+                        },
+                        transaction,
+                    }
+                );
+            }
+
+            createdWorkOrders.push(workOrder);
+        }
+
+        await transaction.commit();
+
+        return res.status(200).json({
+            status: true,
+            message: "Work orders created successfully",
+            count: createdWorkOrders.length,
+            data: createdWorkOrders,
+        });
+    } catch (error) {
+        await transaction.rollback();
+        console.error("Error creating multiple work orders:", error);
+        return res.status(500).json({ error: error.message || "Internal Server Error" });
+    }
+}
+
+/**
  * Get all work orders
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
