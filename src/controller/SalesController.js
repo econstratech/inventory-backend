@@ -1173,7 +1173,7 @@ exports.receiveSalesProduct = async (req, res) => {
   try {
     // Get the sales product
     // check if the company is variant based
-    const isVariantBased = req.user.is_variant_based === 1 ? true : false;
+    const isVariantBased = req.user.is_variant_based; // true or false
     const user_id = req.user.id;
 
     // Get the sales product details
@@ -1349,7 +1349,8 @@ exports.receiveSalesProduct = async (req, res) => {
       await transaction.rollback();
     }
     return res.status(500).json({
-      error: "An error occurred while receiving the sales product",
+      status: false,
+      error: error.message || "An error occurred while receiving the sales product",
     });
   }
 }
@@ -2158,7 +2159,7 @@ exports.generatePDFForvendor = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const isVariantBased = req.user.is_variant_based === 1; // 1 for variant based, 0 for non-variant based
+    const isVariantBased = req.user.is_variant_based; // true for variant based, false for non-variant based
     const salesOrder = await Sale.findOne({
       attributes: [
         'id', 
@@ -4040,7 +4041,6 @@ exports.ApprovedByManagement = async (req, res) => {
 };
 
 const updateStockEntry = async (sales_id, warehouse_id, product_id, product_variant_id = null, received_quantity, status, user_id, transaction = false) => {
-  return new Promise(async (resolve, reject) => {
   try {
     // check if the stock entry exists
     const stockEntry = await ProductStockEntry.findOne({
@@ -4058,7 +4058,7 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
       ]
     });
     if (!stockEntry) {
-      return reject(new Error("Stock entry not found"));
+      throw new Error("Stock entry not found");
     }
     if (status === 9) {
       // update the stock entry
@@ -4136,12 +4136,11 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
       });
     }
 
-    resolve({ status: true, message: "Stock entry updated successfully" });
+    return { status: true, message: "Stock entry updated successfully" };
   } catch (error) {
     console.error("Error updating stock entry:", error);
-    reject({ status: false, message: "Error updating stock entry: " + error.message });
+    throw error;
   }
-  });
 };
 
 /**
