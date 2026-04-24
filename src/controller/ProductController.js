@@ -512,15 +512,17 @@ exports.AddProduct = async (req, res) => {
 
     // Set product attribute values before saving product attribute values
     const productAttributeValues = [];
-    dynamic_attributes.forEach((eachAttributerow) => {
-      if (eachAttributerow.value.trim() !== '') {
-        productAttributeValues.push({
-          product_id: productData.id,
-          product_attribute_id: eachAttributerow.product_attribute_id,
-          value: eachAttributerow.value.trim()
-        });
-      }
-    });
+    if (dynamic_attributes && dynamic_attributes.length > 0) {
+      dynamic_attributes.forEach((eachAttributerow) => {
+        if (eachAttributerow.value.trim() !== '') {
+          productAttributeValues.push({
+            product_id: productData.id,
+            product_attribute_id: eachAttributerow.product_attribute_id,
+            value: eachAttributerow.value.trim()
+          });
+        }
+      });
+    }
 
     // Save attribute values
     await ProductAttributeValue.bulkCreate(productAttributeValues, { transaction });
