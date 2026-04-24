@@ -484,7 +484,7 @@ exports.AddProduct = async (req, res) => {
     }
 
     // Check if all required fields of dynamic attributes are filled
-    if (dynamic_attributes.length > 0) {
+    if (dynamic_attributes && dynamic_attributes.length > 0) {
       dynamic_attributes.forEach((eachAttributerow) => {
         if (eachAttributerow.is_required === 1 && eachAttributerow.value.trim() === '') {
           throw Error("Please fill all required fields");
