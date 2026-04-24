@@ -1894,3 +1894,174 @@
  *                 error:
  *                   type: string
  */
+
+/**
+ * @swagger
+ * /api/report/production/dispatch-report:
+ *   get:
+ *     summary: Get dispatch report for completed work orders
+ *     description: |
+ *       Paginated list of completed work orders (`work_orders.status = 4`) for the
+ *       authenticated user's company with dispatch status and raw-material usage.
+ *       Raw-material used quantity is the sum of `issued_qty` across all
+ *       `work_order_material_issues` records for the work order (so for non-variant
+ *       or mixed-variant setups the value is a simple aggregate, not per-RM).
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Match against wo_number, FG product name, or FG product code.
+ *       - in: query
+ *         name: dispatch_status
+ *         schema:
+ *           type: integer
+ *           enum: [0, 1, 2]
+ *         description: "0 = Not Dispatched, 1 = Partially Dispatched, 2 = Fully Dispatched"
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by `production_completed_at` from (inclusive).
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by `production_completed_at` to (inclusive).
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: Dispatch report fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Dispatch report fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total_records:
+ *                           type: integer
+ *                         total_pages:
+ *                           type: integer
+ *                         current_page:
+ *                           type: integer
+ *                         per_page:
+ *                           type: integer
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: integer
+ *                             example: 101
+ *                           wo_number:
+ *                             type: string
+ *                             example: "WO-2026-738996"
+ *                           fg_product:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                               product_name:
+ *                                 type: string
+ *                                 example: "Marie Biscuit"
+ *                               product_code:
+ *                                 type: string
+ *                                 example: "FG-001"
+ *                           fg_variant:
+ *                             type: object
+ *                             nullable: true
+ *                             description: Present only for variant-based companies with a selected variant.
+ *                             properties:
+ *                               id:
+ *                                 type: integer
+ *                                 example: 5567
+ *                               weight_per_unit:
+ *                                 type: number
+ *                                 example: 500
+ *                               uom_label:
+ *                                 type: string
+ *                                 nullable: true
+ *                                 example: "g"
+ *                           planned_qty:
+ *                             type: number
+ *                             example: 300
+ *                           planned_weight:
+ *                             type: string
+ *                             nullable: true
+ *                             description: |
+ *                               Variant-based companies only. `planned_qty × finalProductVariant.weight_per_unit`,
+ *                               formatted in the most readable unit within the same group (e.g. 40 × 500 g → `"20 kg"`).
+ *                             example: "20 kg"
+ *                           raw_material_used_qty:
+ *                             type: number
+ *                             description: Sum of `issued_qty` across all material issues on this work order.
+ *                             example: 420
+ *                           used_weight:
+ *                             type: string
+ *                             nullable: true
+ *                             description: |
+ *                               Variant-based companies only. Total issued weight across all raw-material issues,
+ *                               using each issue's `rm_product_variant.weight_per_unit`. Values are summed per unit group
+ *                               (weight in grams, volume in ml) and formatted per group (e.g. `"15.5 kg"` or `"12 kg + 3 l"`
+ *                               for mixed-group RMs). Non-convertible units (piece/pc/custom) are appended as-is.
+ *                             example: "15.5 kg"
+ *                           dispatch_status:
+ *                             type: integer
+ *                             enum: [0, 1, 2]
+ *                             example: 1
+ *                           dispatch_status_label:
+ *                             type: string
+ *                             example: "Partially Dispatched"
+ *                           dispatch_completed_at:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                           production_completed_at:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error getting dispatch report"
+ *                 error:
+ *                   type: string
+ */

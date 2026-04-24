@@ -6,8 +6,54 @@ const {
   ReceiveProductBatch,
   WorkOrder,
   MasterBOM,
+  ProductVariant,
 } = require("../model");
 const CommonHelper = require("../helpers/commonHelper");
+
+// Unit conversion table — mirrors the frontend map in WorkOrders.js.
+// `factor` converts 1 unit of the label to its group's base unit
+// (grams for weight, millilitres for volume).
+const UNIT_FACTOR_MAP = {
+  mg: { group: "weight", factor: 0.001 },
+  g: { group: "weight", factor: 1 },
+  kg: { group: "weight", factor: 1000 },
+  ton: { group: "weight", factor: 1_000_000 },
+  tonne: { group: "weight", factor: 1_000_000 },
+  ml: { group: "volume", factor: 1 },
+  l: { group: "volume", factor: 1000 },
+};
+
+function formatWeightFromBase(baseValue, group) {
+  if (!Number.isFinite(baseValue) || baseValue <= 0) return null;
+  const round = (n) => Number(n.toFixed(3));
+  if (group === "weight") {
+    if (baseValue >= 1_000_000) return `${round(baseValue / 1_000_000)} ton`;
+    if (baseValue >= 1000) return `${round(baseValue / 1000)} kg`;
+    return `${round(baseValue)} g`;
+  }
+  if (group === "volume") {
+    if (baseValue >= 1000) return `${round(baseValue / 1000)} l`;
+    return `${round(baseValue)} ml`;
+  }
+  return null;
+}
+
+// Converts quantity * weight_per_unit (expressed in `uomLabel`) into a
+// readable string, picking the best display unit within the same group.
+function formatTotalWeight(qty, weightPerUnit, uomLabel) {
+  const q = Number(qty);
+  const wpu = Number(weightPerUnit);
+  if (!Number.isFinite(q) || q <= 0) return null;
+  if (!Number.isFinite(wpu) || wpu <= 0) return null;
+
+  const total = q * wpu;
+  const label = (uomLabel || "").trim();
+  const entry = UNIT_FACTOR_MAP[label.toLowerCase()];
+  if (!entry) {
+    return `${Number(total.toFixed(3))} ${label}`.trim();
+  }
+  return formatWeightFromBase(total * entry.factor, entry.group);
+}
 
 const BATCH_SIZE = 200;
 
@@ -1560,6 +1606,233 @@ exports.getProductionPlanningVsActualReport = async (req, res) => {
     return res.status(500).json({
       status: false,
       message: "Error getting production planning vs actual report",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Dispatch report for completed work orders (status = 4) of the current company.
+ * Returns: wo_number, FG name/code, FG variant, planned_qty, raw-material-used qty
+ * (sum of all issued quantities on the work order), and dispatch status.
+ *
+ * GET /api/report/production/dispatch-report
+ *   ?page=1&limit=10&search=...&dispatch_status=0|1|2&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+ */
+exports.getDispatchReport = async (req, res) => {
+  try {
+    const company_id = req.user.company_id;
+    const isVariantBased = !!req.user.is_variant_based;
+
+    const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const offset = (page - 1) * limit;
+    const search = (req.query.search || "").trim();
+
+    const where = { company_id, status: 4 };
+
+    if (search) {
+      where[Op.or] = [
+        { wo_number: { [Op.like]: `%${search}%` } },
+        { "$product.product_name$": { [Op.like]: `%${search}%` } },
+        { "$product.product_code$": { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    if (req.query.dispatch_status !== undefined && req.query.dispatch_status !== "") {
+      const ds = Number(req.query.dispatch_status);
+      if ([0, 1, 2].includes(ds)) where.dispatch_status = ds;
+    }
+
+    // Date range filter on production_completed_at (matches getMaterialIssueReport).
+    if (req.query.date_from && req.query.date_to) {
+      where.production_completed_at = {
+        [Op.between]: [
+          new Date(req.query.date_from),
+          new Date(req.query.date_to + "T23:59:59.999Z"),
+        ],
+      };
+    } else if (req.query.date_from) {
+      where.production_completed_at = { [Op.gte]: new Date(req.query.date_from) };
+    } else if (req.query.date_to) {
+      where.production_completed_at = {
+        [Op.lte]: new Date(req.query.date_to + "T23:59:59.999Z"),
+      };
+    }
+
+    const workOrders = await WorkOrder.findAndCountAll({
+      attributes: [
+        "id",
+        "wo_number",
+        "product_id",
+        "final_product_variant_id",
+        "planned_qty",
+        "final_qty",
+        "dispatch_status",
+        "dispatch_completed_at",
+        "production_completed_at",
+      ],
+      where,
+      limit,
+      offset,
+      distinct: true,
+      subQuery: false,
+      order: [["production_completed_at", "DESC"]],
+      include: [
+        {
+          association: "product",
+          attributes: ["id", "product_name", "product_code"],
+        },
+        ...(isVariantBased
+          ? [
+              {
+                association: "finalProductVariant",
+                attributes: ["id", "weight_per_unit"],
+                required: false,
+                include: [
+                  { association: "masterUOM", attributes: ["id", "label"] },
+                ],
+              },
+            ]
+          : []),
+        {
+          association: "workOrderMaterialIssues",
+          attributes: ["id", "issued_qty", "rm_product_variant_id"],
+        },
+      ],
+    });
+
+    const dispatchStatusLabelMap = {
+      0: "Not Dispatched",
+      1: "Partially Dispatched",
+      2: "Fully Dispatched",
+    };
+
+    // Batch-fetch RM variants for weight conversion when the company is variant-based.
+    // Single query covers every issue across the current page of work orders.
+    let rmVariantMap = {};
+    if (isVariantBased) {
+      const rmVariantIds = new Set();
+      for (const wo of workOrders.rows) {
+        for (const mi of wo.workOrderMaterialIssues || []) {
+          if (mi.rm_product_variant_id) rmVariantIds.add(mi.rm_product_variant_id);
+        }
+      }
+      if (rmVariantIds.size > 0) {
+        const variants = await ProductVariant.findAll({
+          attributes: ["id", "weight_per_unit"],
+          where: { id: { [Op.in]: [...rmVariantIds] } },
+          include: [
+            { association: "masterUOM", attributes: ["id", "label"] },
+          ],
+        });
+        rmVariantMap = variants.reduce((acc, v) => {
+          acc[v.id] = {
+            weight_per_unit: Number(v.weight_per_unit) || 0,
+            uom_label: v.masterUOM?.label || null,
+          };
+          return acc;
+        }, {});
+      }
+    }
+
+    const rows = workOrders.rows.map((wo) => {
+      const woJSON = wo.toJSON();
+      const issues = woJSON.workOrderMaterialIssues || [];
+      const rawMaterialUsedQty = issues.reduce(
+        (sum, mi) => sum + (Number(mi.issued_qty) || 0),
+        0
+      );
+
+      let fgVariant = null;
+      let plannedWeight = null;
+      let usedWeight = null;
+
+      if (isVariantBased && woJSON.finalProductVariant) {
+        const variant = woJSON.finalProductVariant;
+        fgVariant = {
+          id: variant.id,
+          weight_per_unit: variant.weight_per_unit,
+          uom_label: variant.masterUOM?.label || null,
+        };
+        plannedWeight = formatTotalWeight(
+          woJSON.planned_qty,
+          variant.weight_per_unit,
+          variant.masterUOM?.label
+        );
+      }
+
+      if (isVariantBased && issues.length > 0) {
+        // Sum issued quantities per unit group (weight / volume) in each group's
+        // base unit, then pick the best display unit per group. If the RMs mix
+        // groups, concatenate (e.g. "12 kg + 3 l").
+        const totalsByGroup = { weight: 0, volume: 0 };
+        const extras = []; // for non-convertible units
+        for (const mi of issues) {
+          const variant = rmVariantMap[mi.rm_product_variant_id];
+          if (!variant || !variant.weight_per_unit) continue;
+          const label = (variant.uom_label || "").trim();
+          const entry = UNIT_FACTOR_MAP[label.toLowerCase()];
+          const total = (Number(mi.issued_qty) || 0) * variant.weight_per_unit;
+          if (!entry) {
+            if (total > 0 && label) extras.push(`${Number(total.toFixed(3))} ${label}`);
+            continue;
+          }
+          totalsByGroup[entry.group] += total * entry.factor;
+        }
+        const parts = [];
+        const w = formatWeightFromBase(totalsByGroup.weight, "weight");
+        if (w) parts.push(w);
+        const v = formatWeightFromBase(totalsByGroup.volume, "volume");
+        if (v) parts.push(v);
+        parts.push(...extras);
+        usedWeight = parts.length > 0 ? parts.join(" + ") : null;
+      }
+
+      const row = {
+        id: woJSON.id,
+        wo_number: woJSON.wo_number,
+        fg_product: woJSON.product
+          ? {
+              id: woJSON.product.id,
+              product_name: woJSON.product.product_name,
+              product_code: woJSON.product.product_code,
+            }
+          : null,
+        fg_variant: fgVariant,
+        planned_qty: Number(woJSON.planned_qty) || 0,
+        raw_material_used_qty: rawMaterialUsedQty,
+        dispatch_status: Number(woJSON.dispatch_status) || 0,
+        dispatch_status_label:
+          dispatchStatusLabelMap[Number(woJSON.dispatch_status) || 0],
+        dispatch_completed_at: woJSON.dispatch_completed_at,
+        production_completed_at: woJSON.production_completed_at,
+      };
+
+      if (isVariantBased) {
+        row.planned_weight = plannedWeight;
+        row.used_weight = usedWeight;
+      }
+
+      return row;
+    });
+
+    const paginatedData = CommonHelper.paginate(
+      { count: workOrders.count, rows },
+      page,
+      limit
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Dispatch report fetched successfully",
+      data: paginatedData,
+    });
+  } catch (error) {
+    console.error("Get dispatch report error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Error getting dispatch report",
       error: error.message,
     });
   }
