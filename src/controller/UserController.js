@@ -153,7 +153,8 @@ exports.Login = async (req, res) => {
                                 'min_purchase_amount',
                                 'min_sale_amount',
                                 'is_variant_based',
-                                'is_production_planning'
+                                'is_production_planning',
+                                'production_without_bom'
                             ],
                         }
                     ]
@@ -195,7 +196,8 @@ exports.Login = async (req, res) => {
             min_purchase_amount: user.company.generalSettings.min_purchase_amount,
             min_sale_amount: user.company.generalSettings.min_sale_amount,
             position: user.position,
-            is_production_planning: user.company.generalSettings.is_production_planning
+            is_production_planning: user.company.generalSettings.is_production_planning,
+            production_without_bom: user.company.generalSettings.production_without_bom,
         });
 
         // Update user's remember token

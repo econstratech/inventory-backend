@@ -1,52 +1,6 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
-// const CompanyModel = sequelize.define(
-//   "Company",
-//   {
-//     company_name: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//     company_email: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//     company_phone: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//     p_isd: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-
-//     address: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//     logo: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-
-//     whatsapp_number: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//     gst: {
-//       type: DataTypes.STRING,
-//       allowNull: true,
-//     },
-//   },
-//   {
-//     tableName: "companies",
-//     timestamps: true,
-//     createdAt: "created_at",
-//     updatedAt: "updated_at",
-//   }
-// );
-
 const GeneralSettings = sequelize.define(
   "GeneralSettings",
   {

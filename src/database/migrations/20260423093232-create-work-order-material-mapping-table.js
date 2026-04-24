@@ -24,7 +24,7 @@ exports.up = function(db) {
       table: 'sale',
       rules: {
         onDelete: 'CASCADE',
-        onUpdate: 'CASCADE'
+        onUpdate: 'RESTRICT'
       },
       mapping: {
         sales_id: 'id'
@@ -48,13 +48,14 @@ exports.up = function(db) {
       },
       company_id: {
         type: 'bigint',
+        unsigned: true,
         notNull: true,
         foreignKey: {
           name: 'material_mapping_company_id_fkey',
-          table: 'sale',
+          table: 'companies',
           rules: {
             onDelete: 'CASCADE',
-            onUpdate: 'CASCADE'
+            onUpdate: 'RESTRICT'
           },
           mapping: {
             company_id: 'id'
@@ -69,7 +70,7 @@ exports.up = function(db) {
           table: 'product',
           rules: {
             onDelete: 'CASCADE',
-            onUpdate: 'CASCADE'
+            onUpdate: 'RESTRICT'
           },
           mapping: {
             fg_product_id: 'id'
@@ -85,7 +86,7 @@ exports.up = function(db) {
           table: 'product_variants',
           rules: {
             onDelete: 'CASCADE',
-            onUpdate: 'CASCADE'
+            onUpdate: 'RESTRICT'
           },
           mapping: {
             fg_product_variant_id: 'id'
@@ -100,7 +101,7 @@ exports.up = function(db) {
           table: 'product',
           rules: {
             onDelete: 'CASCADE',
-            onUpdate: 'CASCADE'
+            onUpdate: 'RESTRICT'
           },
           mapping: {
             rm_product_id: 'id'
