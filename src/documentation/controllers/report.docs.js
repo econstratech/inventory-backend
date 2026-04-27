@@ -1761,6 +1761,85 @@
 
 /**
  * @swagger
+ * /api/report/production/export/material-issue-report:
+ *   get:
+ *     summary: Export material issue report as CSV
+ *     description: |
+ *       Streams a CSV file of completed work orders (status = 4) with their BOM-based material requirements vs actually issued quantities.
+ *
+ *       Mirrors the filter logic of `/api/report/production/material-issue-report`. One CSV row is emitted per BOM line on each work order; WO-level columns (WO Number, Customer, FG Product Code/Name, FG Variant, Planned Qty, Final Qty, Production Completed Date) are repeated across the lines of the same WO so the file is self-describing without merge logic. Work orders with no configured BOM still emit one row with empty RM columns so they are not silently dropped.
+ *
+ *       For variant-based companies, two extra columns (`FG Variant`, `RM Variant`) are inserted after the corresponding product columns. Variants are formatted as `{weight_per_unit} {uom_label}`.
+ *
+ *       Records are ordered by `production_completed_at` DESC then `id` ASC and streamed in batches of 200 to avoid memory exhaustion. Filename format `material-issue-reportDDMMYYYY.csv` (e.g. `material-issue-report27042026.csv`).
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by wo_number, product name, or customer name (LIKE match)
+ *       - in: query
+ *         name: customer_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by customer ID
+ *       - in: query
+ *         name: product_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by finished good product ID
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date from (inclusive)
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date to (inclusive)
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: |
+ *           CSV file download. Columns (non-variant companies):
+ *           `WO Number, Customer, FG Product Code, FG Product Name, Planned Qty, Final Qty, Production Completed Date, RM Product Code, RM Product Name, BOM Qty per Unit, Required Qty, Issued Qty, Variance`.
+ *           For variant-based companies, `FG Variant` is inserted after `FG Product Name` and `RM Variant` is inserted after `RM Product Name`.
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: attachment; filename="material-issue-reportDDMMYYYY.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       500:
+ *         description: Server error (only if headers not yet sent)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error exporting material issue report"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/report/production/production-planning-vs-actual-report:
  *   get:
  *     summary: Get production planning vs actual report (employee-wise or shift-wise)
@@ -2062,6 +2141,86 @@
  *                 message:
  *                   type: string
  *                   example: "Error getting dispatch report"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
+ * /api/report/production/export/dispatch-report:
+ *   get:
+ *     summary: Export dispatch report as CSV
+ *     description: |
+ *       Streams a CSV file of completed work orders (status = 4) with their dispatch status, planned quantity, and total raw material used.
+ *
+ *       Mirrors the filter logic of `/api/report/production/dispatch-report` (`search`, `dispatch_status`, `date_from`, `date_to`); pagination is dropped so every matching record is exported. One CSV row per work order, ordered by `production_completed_at` DESC then `id` ASC.
+ *
+ *       For variant-based companies, three extra columns (`FG Variant`, `Planned Weight`, `Used Weight`) are inserted. `Planned Weight` is `planned_qty * weight_per_unit` rendered in the best display unit for the FG variant's UoM group. `Used Weight` aggregates issued raw materials per unit group (weight / volume) in their base unit, picks the best display unit per group, and concatenates with `+` when the BOM mixes groups (e.g. `12 kg + 3 l`). Non-convertible UoMs are appended verbatim with their issued total.
+ *
+ *       Records are streamed in batches of 200 to avoid memory exhaustion. Filename format `dispatch-reportDDMMYYYY.csv` (e.g. `dispatch-report27042026.csv`).
+ *     tags: [Report]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by wo_number, FG product name, or FG product code (LIKE match)
+ *       - in: query
+ *         name: dispatch_status
+ *         schema:
+ *           type: integer
+ *           enum: [0, 1, 2]
+ *         description: |
+ *           Filter by dispatch status:
+ *           - 0 = Not Dispatched
+ *           - 1 = Partially Dispatched
+ *           - 2 = Fully Dispatched
+ *       - in: query
+ *         name: date_from
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date from (inclusive)
+ *         example: "2026-04-01"
+ *       - in: query
+ *         name: date_to
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Filter by production completed date to (inclusive)
+ *         example: "2026-04-30"
+ *     responses:
+ *       200:
+ *         description: |
+ *           CSV file download. Columns (non-variant companies):
+ *           `WO Number, FG Product Code, FG Product Name, Planned Qty, Raw Material Used Qty, Dispatch Status, Dispatch Completed Date, Production Completed Date`.
+ *
+ *           For variant-based companies, `FG Variant` is inserted after `FG Product Name`, `Planned Weight` after `Planned Qty`, and `Used Weight` after `Raw Material Used Qty`.
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: attachment; filename="dispatch-reportDDMMYYYY.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       500:
+ *         description: Server error (only if response headers were not yet sent)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error exporting dispatch report"
  *                 error:
  *                   type: string
  */

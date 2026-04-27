@@ -17,8 +17,10 @@ const {
     getItemWiseSalesReport,
     getBatchExpirationReport,
     getMaterialIssueReport,
+    exportMaterialIssueReport,
     getProductionPlanningVsActualReport,
-    getDispatchReport
+    getDispatchReport,
+    exportDispatchReport
 
 } = require("../controller/ReportController");
 const { authToken } = require("../utils/Middleware");
@@ -47,7 +49,9 @@ router.get("/batch-expiration-report", authToken, getBatchExpirationReport);
 
 // Production reports can be added here
 router.get("/production/material-issue-report", authToken, getMaterialIssueReport);
+router.get("/production/export/material-issue-report", authToken, exportMaterialIssueReport);
 router.get("/production/production-planning-vs-actual-report", authToken, getProductionPlanningVsActualReport);
 router.get("/production/dispatch-report", authToken, getDispatchReport);
+router.get("/production/export/dispatch-report", authToken, exportDispatchReport);
 
 module.exports = router;

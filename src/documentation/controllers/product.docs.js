@@ -1639,6 +1639,84 @@
 
 /**
  * @swagger
+ * /api/product/stock-entries/export:
+ *   get:
+ *     summary: Export stock master list as CSV
+ *     description: |
+ *       Streams a CSV file of stock entries (Stock Master) for the authenticated user's company.
+ *
+ *       Mirrors the filter logic of `/api/product/stock-entries` (same `product_id`, `warehouse_id`, `brand_id`, `product_type_id`, `searchkey` query params; no pagination — every matching record is exported).
+ *
+ *       For variant-based companies, two extra columns (`Variant`, `Master Pack`) are inserted after `Brand`, and a `Total Weight` column is appended at the end. `Total Weight` is calculated as `quantity * weight_per_unit` with the variant's UoM label.
+ *
+ *       Calculated columns mirror the Stock Master frontend: `Safety Factor = ceil(buffer_size * 0.005 * 100) / 100`, `Inventory Needed = max(0, buffer + safety_factor + sale_order_received - quantity - inventory_at_transit)`.
+ *
+ *       Records are streamed in batches of 200 to avoid memory exhaustion. Filename format `stock_master_YYYYMMDDHHmmss.csv` (e.g. `stock_master_20260427153045.csv`).
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: product_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by product ID
+ *       - in: query
+ *         name: warehouse_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by warehouse ID
+ *       - in: query
+ *         name: brand_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by product brand ID
+ *       - in: query
+ *         name: product_type_id
+ *         schema:
+ *           type: integer
+ *         description: Filter by product type ID
+ *       - in: query
+ *         name: searchkey
+ *         schema:
+ *           type: string
+ *         description: Search by product_name, sku_product, or product_code (LIKE match)
+ *     responses:
+ *       200:
+ *         description: |
+ *           CSV file download. Columns (non-variant companies):
+ *           `Product Code, Product Name, Brand, Product Type, Store, Category, Buffer Quantity, Inventory at Transit, Inventory at Production, Available Quantity, Sale Order Received, Safety Factor, Inventory Needed`.
+ *
+ *           For variant-based companies, `Variant` and `Master Pack` columns are inserted after `Brand`, and `Total Weight` is appended after `Inventory Needed`.
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: attachment; filename="stock_master_YYYYMMDDHHmmss.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       500:
+ *         description: Server error (only if response headers were not yet sent)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error exporting stock entries"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/product/stock-entries/{id}:
  *   get:
  *     summary: Get a specific stock entry by ID

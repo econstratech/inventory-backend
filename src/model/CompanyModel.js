@@ -112,6 +112,11 @@ const GeneralSettings = sequelize.define(
       type: DataTypes.SMALLINT,
       allowNull: false,
       defaultValue: 0,
+    },
+    has_master_pack: {
+      type: DataTypes.SMALLINT,
+      allowNull: true,
+      defaultValue: 0,
     }
   },
   {
