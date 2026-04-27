@@ -91,9 +91,11 @@ const UPLOAD_FIXED_HEADERS = {
   CATEGORY: 'Category',
   BRAND: 'Brand',
   UOM: 'UOM',
-  WEIGHT_PER_UNIT: 'Weight',
+  MASTER_PACK_UOM: 'Master Pack UOM',
+  WEIGHT_PER_UNIT: 'Unit Qty',
   BATCH_APPLICABLE: 'Batch Applicable',
   MARKUP_PERCENT: 'Markup Percent',
+  QUANTITY_PER_PACK: 'Pack Qty'
 };
 
 function getRowValueByHeader(row, headerName) {
@@ -146,9 +148,9 @@ function parseCSVFromBuffer(buffer) {
   });
 }
 
-function productVatientInsert(isProductExist, uomId, weightPerUnit, user, transaction) {
-  return new Promise(async (resolve, reject) => {
+const productVatientInsert = async(params) => {
     try {
+      const { isProductExist, uomId, masterPackUomId, weightPerUnit, weightPerPack, quantityPerPack, user, transaction } = params;
        // If product already exist then add varient
        let productVariant = await ProductVariant.findOne({
         attributes: ['id', 'weight_per_unit', 'price_per_unit'],
@@ -165,6 +167,9 @@ function productVatientInsert(isProductExist, uomId, weightPerUnit, user, transa
           product_id: isProductExist.id,
           uom_id: uomId,
           weight_per_unit: weightPerUnit,
+          quantity_per_pack: quantityPerPack,
+          weight_per_pack: weightPerPack,
+          pack_uom_id: masterPackUomId,
           status: 1,
           company_id: user.company_id,
           user_id: user.id,
@@ -172,14 +177,15 @@ function productVatientInsert(isProductExist, uomId, weightPerUnit, user, transa
       } else {
         // Update weight per unit
         await ProductVariant.update({
-          weight_per_unit: weightPerUnit
+          quantity_per_pack: quantityPerPack,
+          weight_per_pack: weightPerPack,
+          pack_uom_id: masterPackUomId,
         }, { where: { id: productVariant.id }, transaction });
       }
-      resolve(productVariant);
+      return productVariant;
     } catch (error) {
-      reject(error);
+      throw error;
     }
-  });
 }
 
 /**
@@ -259,6 +265,7 @@ exports.uploadProducts = async (req, res) => {
       return res.status(400).json({ status: false, message: 'Maximum number of rows allowed is 500' });
     }
 
+
     const transaction = await sequelize.transaction();
     try {
       const products = [];
@@ -270,7 +277,9 @@ exports.uploadProducts = async (req, res) => {
         const categoryNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.CATEGORY);
         const brandNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.BRAND);
         const uomNameValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.UOM);
+        const masterPackUom = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.MASTER_PACK_UOM);
         const weightPerUnitValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.WEIGHT_PER_UNIT);
+        const quantityPerPackValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.QUANTITY_PER_PACK);
         const batchApplicableValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.BATCH_APPLICABLE);
         const markupPercentValue = getRowValueByHeader(row, UPLOAD_FIXED_HEADERS.MARKUP_PERCENT);
 
@@ -280,8 +289,11 @@ exports.uploadProducts = async (req, res) => {
         const categoryName = categoryNameValue != null ? String(categoryNameValue).trim() : '';
         const brandName = brandNameValue != null ? String(brandNameValue).trim() : '';
         const uomName = uomNameValue != null ? String(uomNameValue).trim() : '';
+        const masterPackUomName = masterPackUom != null ? String(masterPackUom).trim() : '';
 
         const weightPerUnit = weightPerUnitValue != null ? parseInt(weightPerUnitValue, 10) : 0;
+        const quantityPerPack = quantityPerPackValue != null ? parseInt(quantityPerPackValue, 10) : 0;
+        const weightPerPack = `${quantityPerPack} ${masterPackUomName}`;
         const batchApplicable = parseBatchApplicable(batchApplicableValue);
         const markupPercent = markupPercentValue != null && markupPercentValue !== ''
           ? parseFloat(markupPercentValue)
@@ -293,20 +305,18 @@ exports.uploadProducts = async (req, res) => {
         }
 
         // Find or create UOM
-        const uomId = await findUnitByName(uomName);
+        const [uomId, masterPackUomId = null, isProductExist] = await Promise.all([
+          findUnitByName(uomName),
+          findUnitByName(masterPackUomName),
+          Product.findOne({
+            attributes: ['id'],
+            where: { product_code: itemCode, company_id: companyId },
+            raw: true,
+          })
+        ]);
+
         if (!uomId) {
           throw new Error(`UOM "${uomName}" not found and could not be created.`);
-        }
-
-        const isProductExist = await Product.findOne({
-          attributes: ['id'],
-          where: { product_code: itemCode, company_id: companyId },
-          raw: true,
-        });
-        if (isProductExist) {
-          // If product already exist then add varient
-          await productVatientInsert(isProductExist, uomId, weightPerUnit, req.user, transaction);
-          continue;
         }
 
         let productCategoryId = null;
@@ -326,6 +336,32 @@ exports.uploadProducts = async (req, res) => {
 
         const productTypeId = await findProductTypeByName(itemType);
 
+        if (isProductExist) {
+          // If product already exist then add varient
+          const variantParams = {
+            isProductExist,
+            uomId,
+            masterPackUomId,
+            weightPerUnit,
+            weightPerPack,
+            quantityPerPack,
+            user: req.user,
+            transaction
+          };
+          await productVatientInsert(variantParams);
+          await Product.update({
+            product_name: itemName,
+            product_type_id: productTypeId,
+            product_category_id: productCategoryId,
+            brand_id: brandId,
+            ...(masterPackUomId && { has_master_pack: 1 })
+          }, {
+            where: { id: isProductExist.id },
+            transaction,
+          });
+          continue;
+        }
+
         const productSKU = await generateUniqueProductSKU(companyId);
 
         // Create product
@@ -338,11 +374,10 @@ exports.uploadProducts = async (req, res) => {
           product_category_id: productCategoryId,
           brand_id: brandId,
           ...(!isVariantBased ? { uom_id: uomId } : {}),
-          // uom_id: uomId,
-          // buffer_size: null,
           is_batch_applicable: batchApplicable,
           markup_percentage: markupPercent,
           sku_product: productSKU,
+          ...(masterPackUomId && { has_master_pack: 1 })
         }, { transaction });
 
         const productAttributeValues = [];
@@ -365,7 +400,17 @@ exports.uploadProducts = async (req, res) => {
         }
         // If company is set to variant based then add product variants
         if (isVariantBased) {
-          await productVatientInsert(productData, uomId, weightPerUnit, req.user, transaction);
+          const variantParams = {
+            isProductExist: productData ?? null,
+            uomId,
+            masterPackUomId,
+            weightPerUnit,
+            weightPerPack,
+            quantityPerPack,
+            user: req.user,
+            transaction
+          };
+          await productVatientInsert(variantParams);
         }
 
         products.push(productData);
@@ -375,7 +420,7 @@ exports.uploadProducts = async (req, res) => {
       return res.status(200).json({ status: true, message: 'Products uploaded successfully', data: products });
     } catch (transactionError) {
       await transaction.rollback();
-      console.error('Transaction error:', transactionError.message);
+      console.error('Transaction error:', transactionError);
       throw transactionError;
     }
   } catch (error) {
