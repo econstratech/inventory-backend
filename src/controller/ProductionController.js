@@ -10,6 +10,7 @@ const {
     CompanyProductionStep,
     ProductionPlanning,
     ProductionActuals,
+    ProductStockEntry
 } = require("../model")
 const WorkOrderDispatchLog = require("../model/WorkOrderDispatchLog");
 const CommonHelper = require("../helpers/commonHelper");

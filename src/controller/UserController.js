@@ -312,7 +312,7 @@ exports.usersList = async (req, res) => {
             ];
         }
 
-        let result = await User.findAndCountAll({
+        const result = await User.findAndCountAll({
             attributes: ['id', 'name', 'username', 'email', 'role'],
             where,
             limit,
@@ -321,27 +321,45 @@ exports.usersList = async (req, res) => {
             raw: true
         });
 
-        result.rows = await Promise.all(
-            result.rows.map(async (user) => {
-                let roleNames = [];
-                if (user.role) {
-                    const roleIds = JSON.parse(user.role);
+        // Parse each user's role JSON once and collect every referenced role id
+        // so we can resolve names with a single batched query instead of one per user (N+1 -> 1).
+        const parsedRolesByUser = new Map();
+        const allRoleIds = new Set();
 
-                    roleNames = await Role.findAll({
-                        attributes: ['name'],
-                        where: {
-                            id: { [Op.in]: roleIds }
-                        },
-                        raw: true
-                    });
-                }
+        for (const user of result.rows) {
+            if (!user.role) continue;
+            let roleIds;
+            try {
+                roleIds = JSON.parse(user.role);
+            } catch {
+                // Skip malformed role payloads instead of failing the whole request.
+                continue;
+            }
+            if (!Array.isArray(roleIds) || roleIds.length === 0) continue;
+            parsedRolesByUser.set(user.id, roleIds);
+            for (const id of roleIds) allRoleIds.add(id);
+        }
 
-                return {
-                    ...user,
-                    roleNames: roleNames.map(r => r.name)
-                };
-            })
-        );
+        // One round-trip to fetch every role name we need across the page.
+        const roleNameById = new Map();
+        if (allRoleIds.size > 0) {
+            const roles = await Role.findAll({
+                attributes: ['id', 'name'],
+                where: { id: { [Op.in]: [...allRoleIds] } },
+                raw: true
+            });
+            for (const role of roles) roleNameById.set(role.id, role.name);
+        }
+
+        result.rows = result.rows.map((user) => {
+            const roleIds = parsedRolesByUser.get(user.id) || [];
+            return {
+                ...user,
+                roleNames: roleIds
+                    .map((id) => roleNameById.get(id))
+                    .filter(Boolean)
+            };
+        });
 
         const total = result.count;
         const totalPages = Math.ceil(total / limit);
