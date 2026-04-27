@@ -1452,6 +1452,282 @@ exports.getMaterialIssueReport = async (req, res) => {
 };
 
 /**
+ * Export material issue report as CSV (batch-wise to avoid memory exhaustion).
+ * GET /api/report/production/export/material-issue-report
+ *   ?search=...&customer_id=...&product_id=...&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+ *
+ * Mirrors the filter logic of getMaterialIssueReport. One CSV row is emitted per
+ * BOM line on each completed work order; WO-level columns are repeated across
+ * the lines of the same WO so the CSV is self-describing without merge logic.
+ * Filename: material-issue-reportDDMMYYYY.csv
+ */
+exports.exportMaterialIssueReport = async (req, res) => {
+  try {
+    const company_id = req.user.company_id;
+    const isVariantBased = !!req.user.is_variant_based;
+    const search = req.query.search || "";
+
+    const where = { company_id, status: 4 };
+
+    if (search) {
+      where[Op.or] = [
+        { wo_number: { [Op.like]: `%${search}%` } },
+        { "$product.product_name$": { [Op.like]: `%${search}%` } },
+        { "$customer.name$": { [Op.like]: `%${search}%` } },
+      ];
+    }
+    if (req.query.customer_id) where.customer_id = req.query.customer_id;
+    if (req.query.product_id) where.product_id = req.query.product_id;
+
+    if (req.query.date_from && req.query.date_to) {
+      where.production_completed_at = {
+        [Op.between]: [
+          new Date(req.query.date_from),
+          new Date(req.query.date_to + "T23:59:59.999Z"),
+        ],
+      };
+    } else if (req.query.date_from) {
+      where.production_completed_at = { [Op.gte]: new Date(req.query.date_from) };
+    } else if (req.query.date_to) {
+      where.production_completed_at = {
+        [Op.lte]: new Date(req.query.date_to + "T23:59:59.999Z"),
+      };
+    }
+
+    const d = new Date();
+    const dateStr = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+    const filename = `material-issue-report${dateStr}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headerCols = [
+      "WO Number",
+      "Customer",
+      "FG Product Code",
+      "FG Product Name",
+      ...(isVariantBased ? ["FG Variant"] : []),
+      "Planned Qty",
+      "Final Qty",
+      "Production Completed Date",
+      "RM Product Code",
+      "RM Product Name",
+      ...(isVariantBased ? ["RM Variant"] : []),
+      "BOM Qty per Unit",
+      "Required Qty",
+      "Issued Qty",
+      "Variance",
+    ];
+    res.write(headerCols.join(",") + "\n");
+
+    const formatDate = (val) => {
+      if (!val) return "";
+      const dt = new Date(val);
+      if (Number.isNaN(dt.getTime())) return "";
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const yyyy = dt.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
+    const formatVariant = (variant) => {
+      if (!variant) return "";
+      const wpu = variant.weight_per_unit;
+      const label = variant.masterUOM?.label || "";
+      if (wpu == null || wpu === "") return label;
+      return `${wpu} ${label}`.trim();
+    };
+
+    let offset = 0;
+    while (true) {
+      const batch = await WorkOrder.findAll({
+        attributes: [
+          "id",
+          "wo_number",
+          "product_id",
+          "final_product_variant_id",
+          "planned_qty",
+          "final_qty",
+          "production_completed_at",
+        ],
+        where,
+        order: [["production_completed_at", "DESC"], ["id", "ASC"]],
+        limit: BATCH_SIZE,
+        offset,
+        distinct: true,
+        subQuery: false,
+        include: [
+          { association: "product", attributes: ["id", "product_name", "product_code"] },
+          ...(isVariantBased
+            ? [
+                {
+                  association: "finalProductVariant",
+                  attributes: ["id", "weight_per_unit"],
+                  required: false,
+                  include: [{ association: "masterUOM", attributes: ["id", "label"] }],
+                },
+              ]
+            : []),
+          { association: "customer", attributes: ["id", "name"] },
+          {
+            association: "workOrderMaterialIssues",
+            attributes: ["id", "rm_product_id", "rm_product_variant_id", "issued_qty"],
+          },
+        ],
+      });
+
+      if (batch.length === 0) break;
+
+      const bomConditions = [];
+      for (const wo of batch) {
+        if (isVariantBased && wo.final_product_variant_id) {
+          bomConditions.push({
+            [Op.and]: [
+              { final_product_id: wo.product_id },
+              { final_product_variant_id: wo.final_product_variant_id },
+            ],
+          });
+        } else {
+          bomConditions.push({
+            [Op.and]: [
+              { final_product_id: wo.product_id },
+              { final_product_variant_id: null },
+            ],
+          });
+        }
+      }
+
+      const bomRows = bomConditions.length
+        ? await MasterBOM.findAll({
+            attributes: [
+              "id",
+              "final_product_id",
+              "final_product_variant_id",
+              "raw_material_product_id",
+              "raw_material_variant_id",
+              "quantity",
+            ],
+            where: { [Op.or]: bomConditions },
+            include: [
+              {
+                association: "rawMaterialProduct",
+                attributes: ["id", "product_name", "product_code"],
+              },
+              ...(isVariantBased
+                ? [
+                    {
+                      association: "rawMaterialProductVariant",
+                      attributes: ["id", "weight_per_unit"],
+                      required: false,
+                      include: [{ association: "masterUOM", attributes: ["id", "label"] }],
+                    },
+                  ]
+                : []),
+            ],
+          })
+        : [];
+
+      const bomMap = {};
+      for (const bom of bomRows) {
+        const key = `${bom.final_product_id}:${bom.final_product_variant_id || "null"}`;
+        if (!bomMap[key]) bomMap[key] = [];
+        bomMap[key].push(bom);
+      }
+
+      for (const wo of batch) {
+        const woJSON = wo.toJSON();
+        const bomKey = `${woJSON.product_id}:${woJSON.final_product_variant_id || "null"}`;
+        const bomItems = bomMap[bomKey] || [];
+
+        const issuedMap = {};
+        for (const mi of woJSON.workOrderMaterialIssues || []) {
+          const miKey = `${mi.rm_product_id}:${mi.rm_product_variant_id || "null"}`;
+          issuedMap[miKey] = (issuedMap[miKey] || 0) + Number(mi.issued_qty || 0);
+        }
+
+        const woNumber = csvEscape(woJSON.wo_number);
+        const customerName = csvEscape(woJSON.customer?.name);
+        const fgCode = csvEscape(woJSON.product?.product_code);
+        const fgName = csvEscape(woJSON.product?.product_name);
+        const fgVariant = isVariantBased
+          ? csvEscape(formatVariant(woJSON.finalProductVariant))
+          : null;
+        const plannedQty = csvEscape(exports.formatDecimal(woJSON.planned_qty));
+        const finalQty = csvEscape(exports.formatDecimal(woJSON.final_qty));
+        const productionDate = csvEscape(formatDate(woJSON.production_completed_at));
+
+        if (bomItems.length === 0) {
+          // Emit one row even if no BOM is configured, so the WO is still represented.
+          const rowData = [
+            woNumber,
+            customerName,
+            fgCode,
+            fgName,
+            ...(isVariantBased ? [fgVariant] : []),
+            plannedQty,
+            finalQty,
+            productionDate,
+            "",
+            "",
+            ...(isVariantBased ? [""] : []),
+            "",
+            "",
+            "",
+            "",
+          ];
+          res.write(rowData.join(",") + "\n");
+          continue;
+        }
+
+        for (const bom of bomItems) {
+          const bomJSON = bom.toJSON ? bom.toJSON() : bom;
+          const miKey = `${bomJSON.raw_material_product_id}:${bomJSON.raw_material_variant_id || "null"}`;
+          const requiredQty = Number(bomJSON.quantity) * Number(woJSON.planned_qty);
+          const issuedQty = issuedMap[miKey] || 0;
+          const variance = issuedQty - requiredQty;
+
+          const rowData = [
+            woNumber,
+            customerName,
+            fgCode,
+            fgName,
+            ...(isVariantBased ? [fgVariant] : []),
+            plannedQty,
+            finalQty,
+            productionDate,
+            csvEscape(bomJSON.rawMaterialProduct?.product_code),
+            csvEscape(bomJSON.rawMaterialProduct?.product_name),
+            ...(isVariantBased
+              ? [csvEscape(formatVariant(bomJSON.rawMaterialProductVariant))]
+              : []),
+            csvEscape(exports.formatDecimal(bomJSON.quantity)),
+            csvEscape(exports.formatDecimal(requiredQty)),
+            csvEscape(exports.formatDecimal(issuedQty)),
+            csvEscape(exports.formatDecimal(variance)),
+          ];
+          res.write(rowData.join(",") + "\n");
+        }
+      }
+
+      offset += batch.length;
+      if (batch.length < BATCH_SIZE) break;
+    }
+
+    res.end();
+  } catch (error) {
+    console.error("Export material issue report error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: false,
+        message: "Error exporting material issue report",
+        error: error.message,
+      });
+    }
+    res.end();
+  }
+};
+
+/**
  * Production planning vs actual report, grouped by responsible_staff (employee) or work_shift.
  * GET /api/report/production/production-planning-vs-actual-report?type=employee|shift
  *
@@ -1835,5 +2111,251 @@ exports.getDispatchReport = async (req, res) => {
       message: "Error getting dispatch report",
       error: error.message,
     });
+  }
+};
+
+/**
+ * Export dispatch report as CSV (batch-streamed to avoid memory exhaustion).
+ * GET /api/report/production/export/dispatch-report
+ *   ?search=...&dispatch_status=0|1|2&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+ *
+ * Mirrors the filter logic of getDispatchReport. One CSV row per completed
+ * work order. For variant-based companies, extra columns (FG Variant,
+ * Planned Weight, Used Weight) are included; weight aggregation matches the
+ * "{n} kg + {n} l" formatting used in the JSON list response.
+ * Filename: dispatch-reportDDMMYYYY.csv
+ */
+exports.exportDispatchReport = async (req, res) => {
+  try {
+    const company_id = req.user.company_id;
+    const isVariantBased = !!req.user.is_variant_based;
+    const search = (req.query.search || "").trim();
+
+    const where = { company_id, status: 4 };
+
+    if (search) {
+      where[Op.or] = [
+        { wo_number: { [Op.like]: `%${search}%` } },
+        { "$product.product_name$": { [Op.like]: `%${search}%` } },
+        { "$product.product_code$": { [Op.like]: `%${search}%` } },
+      ];
+    }
+
+    if (req.query.dispatch_status !== undefined && req.query.dispatch_status !== "") {
+      const ds = Number(req.query.dispatch_status);
+      if ([0, 1, 2].includes(ds)) where.dispatch_status = ds;
+    }
+
+    if (req.query.date_from && req.query.date_to) {
+      where.production_completed_at = {
+        [Op.between]: [
+          new Date(req.query.date_from),
+          new Date(req.query.date_to + "T23:59:59.999Z"),
+        ],
+      };
+    } else if (req.query.date_from) {
+      where.production_completed_at = { [Op.gte]: new Date(req.query.date_from) };
+    } else if (req.query.date_to) {
+      where.production_completed_at = {
+        [Op.lte]: new Date(req.query.date_to + "T23:59:59.999Z"),
+      };
+    }
+
+    const dispatchStatusLabelMap = {
+      0: "Not Dispatched",
+      1: "Partially Dispatched",
+      2: "Fully Dispatched",
+    };
+
+    const d = new Date();
+    const dateStr = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+    const filename = `dispatch-report${dateStr}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headerCols = [
+      "WO Number",
+      "FG Product Code",
+      "FG Product Name",
+      ...(isVariantBased ? ["FG Variant"] : []),
+      "Planned Qty",
+      ...(isVariantBased ? ["Planned Weight"] : []),
+      "Raw Material Used Qty",
+      ...(isVariantBased ? ["Used Weight"] : []),
+      "Dispatch Status",
+      "Dispatch Completed Date",
+      "Production Completed Date",
+    ];
+    res.write(headerCols.join(",") + "\n");
+
+    const formatDate = (val) => {
+      if (!val) return "";
+      const dt = new Date(val);
+      if (Number.isNaN(dt.getTime())) return "";
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const yyyy = dt.getFullYear();
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
+    const formatVariant = (variant) => {
+      if (!variant) return "";
+      const wpu = variant.weight_per_unit;
+      const label = variant.masterUOM?.label || "";
+      if (wpu == null || wpu === "") return label;
+      return `${wpu} ${label}`.trim();
+    };
+
+    let offset = 0;
+    while (true) {
+      const batch = await WorkOrder.findAll({
+        attributes: [
+          "id",
+          "wo_number",
+          "product_id",
+          "final_product_variant_id",
+          "planned_qty",
+          "final_qty",
+          "dispatch_status",
+          "dispatch_completed_at",
+          "production_completed_at",
+        ],
+        where,
+        order: [["production_completed_at", "DESC"], ["id", "ASC"]],
+        limit: BATCH_SIZE,
+        offset,
+        distinct: true,
+        subQuery: false,
+        include: [
+          { association: "product", attributes: ["id", "product_name", "product_code"] },
+          ...(isVariantBased
+            ? [
+                {
+                  association: "finalProductVariant",
+                  attributes: ["id", "weight_per_unit"],
+                  required: false,
+                  include: [{ association: "masterUOM", attributes: ["id", "label"] }],
+                },
+              ]
+            : []),
+          {
+            association: "workOrderMaterialIssues",
+            attributes: ["id", "issued_qty", "rm_product_variant_id"],
+          },
+        ],
+      });
+
+      if (batch.length === 0) break;
+
+      // Batch-fetch RM variants for weight conversion when variant-based.
+      let rmVariantMap = {};
+      if (isVariantBased) {
+        const rmVariantIds = new Set();
+        for (const wo of batch) {
+          for (const mi of wo.workOrderMaterialIssues || []) {
+            if (mi.rm_product_variant_id) rmVariantIds.add(mi.rm_product_variant_id);
+          }
+        }
+        if (rmVariantIds.size > 0) {
+          const variants = await ProductVariant.findAll({
+            attributes: ["id", "weight_per_unit"],
+            where: { id: { [Op.in]: [...rmVariantIds] } },
+            include: [{ association: "masterUOM", attributes: ["id", "label"] }],
+          });
+          rmVariantMap = variants.reduce((acc, v) => {
+            acc[v.id] = {
+              weight_per_unit: Number(v.weight_per_unit) || 0,
+              uom_label: v.masterUOM?.label || null,
+            };
+            return acc;
+          }, {});
+        }
+      }
+
+      for (const wo of batch) {
+        const woJSON = wo.toJSON();
+        const issues = woJSON.workOrderMaterialIssues || [];
+        const rawMaterialUsedQty = issues.reduce(
+          (sum, mi) => sum + (Number(mi.issued_qty) || 0),
+          0
+        );
+
+        let plannedWeight = "";
+        let usedWeight = "";
+
+        if (isVariantBased && woJSON.finalProductVariant) {
+          plannedWeight =
+            formatTotalWeight(
+              woJSON.planned_qty,
+              woJSON.finalProductVariant.weight_per_unit,
+              woJSON.finalProductVariant.masterUOM?.label
+            ) || "";
+        }
+
+        if (isVariantBased && issues.length > 0) {
+          // Sum issued quantities per unit group (weight / volume) in each
+          // group's base unit, then pick the best display unit per group.
+          // If RMs mix groups, concatenate (e.g. "12 kg + 3 l").
+          const totalsByGroup = { weight: 0, volume: 0 };
+          const extras = [];
+          for (const mi of issues) {
+            const variant = rmVariantMap[mi.rm_product_variant_id];
+            if (!variant || !variant.weight_per_unit) continue;
+            const label = (variant.uom_label || "").trim();
+            const entry = UNIT_FACTOR_MAP[label.toLowerCase()];
+            const total = (Number(mi.issued_qty) || 0) * variant.weight_per_unit;
+            if (!entry) {
+              if (total > 0 && label) extras.push(`${Number(total.toFixed(3))} ${label}`);
+              continue;
+            }
+            totalsByGroup[entry.group] += total * entry.factor;
+          }
+          const parts = [];
+          const w = formatWeightFromBase(totalsByGroup.weight, "weight");
+          if (w) parts.push(w);
+          const v = formatWeightFromBase(totalsByGroup.volume, "volume");
+          if (v) parts.push(v);
+          parts.push(...extras);
+          usedWeight = parts.length > 0 ? parts.join(" + ") : "";
+        }
+
+        const dispatchLabel =
+          dispatchStatusLabelMap[Number(woJSON.dispatch_status) || 0] || "";
+
+        const rowData = [
+          csvEscape(woJSON.wo_number),
+          csvEscape(woJSON.product?.product_code),
+          csvEscape(woJSON.product?.product_name),
+          ...(isVariantBased
+            ? [csvEscape(formatVariant(woJSON.finalProductVariant))]
+            : []),
+          csvEscape(exports.formatDecimal(woJSON.planned_qty)),
+          ...(isVariantBased ? [csvEscape(plannedWeight)] : []),
+          csvEscape(exports.formatDecimal(rawMaterialUsedQty)),
+          ...(isVariantBased ? [csvEscape(usedWeight)] : []),
+          csvEscape(dispatchLabel),
+          csvEscape(formatDate(woJSON.dispatch_completed_at)),
+          csvEscape(formatDate(woJSON.production_completed_at)),
+        ];
+
+        res.write(rowData.join(",") + "\n");
+      }
+
+      offset += batch.length;
+      if (batch.length < BATCH_SIZE) break;
+    }
+
+    res.end();
+  } catch (error) {
+    console.error("Export dispatch report error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: false,
+        message: "Error exporting dispatch report",
+        error: error.message,
+      });
+    }
+    res.end();
   }
 };

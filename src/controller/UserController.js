@@ -154,7 +154,8 @@ exports.Login = async (req, res) => {
                                 'min_sale_amount',
                                 'is_variant_based',
                                 'is_production_planning',
-                                'production_without_bom'
+                                'production_without_bom',
+                                'has_master_pack'
                             ],
                         }
                     ]
@@ -198,6 +199,7 @@ exports.Login = async (req, res) => {
             position: user.position,
             is_production_planning: user.company.generalSettings.is_production_planning,
             production_without_bom: user.company.generalSettings.production_without_bom,
+            has_master_pack: user.company.generalSettings.has_master_pack
         });
 
         // Update user's remember token

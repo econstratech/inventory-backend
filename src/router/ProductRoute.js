@@ -32,6 +32,7 @@ const {
     AddToStock,
     BulkAddToStock,
     GetStockEntries,
+    ExportStockEntries,
     GetStockEntriesById,
     DeleteStockEntry,
     GetStoreWiseStock,
@@ -53,6 +54,7 @@ router.post('/add',authToken, upload.single('file'), AddProduct);
 router.get("/list",authToken, GetAllProducts);
 router.get("/all-deleted-products",authToken,GetAllDeletedProducts);
 router.get('/stock-entries', authToken, GetStockEntries);
+router.get('/stock-entries/export', authToken, ExportStockEntries);
 router.get("/indent-required-products", authToken, GetIndentRequiredProducts);
 
 router.get('/stock-entries/:id', authToken, GetStockEntriesById);

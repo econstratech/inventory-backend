@@ -3522,7 +3522,7 @@ exports.GetStockEntries = async (req, res) => {
       include: [
         {
           association: 'productVariant',
-          attributes: ['id', 'weight_per_unit'],
+          attributes: ['id', 'weight_per_unit', 'weight_per_pack'],
           include: [
             {
               association: 'masterUOM',
@@ -3569,14 +3569,212 @@ exports.GetStockEntries = async (req, res) => {
     const paginatedStockEntries = CommonHelper.paginate(stockEntries, page, limit);
 
     // return stock entries with pagination details
-    return res.status(200).json({ 
-      status: true, 
-      message: "Stock entries fetched successfully", 
-      data: paginatedStockEntries 
+    return res.status(200).json({
+      status: true,
+      message: "Stock entries fetched successfully",
+      data: paginatedStockEntries
     });
   } catch (error) {
     console.error("Get stock entries error:", error);
     return res.status(500).json({ status: false, message: "Error getting stock entries", error: error.message });
+  }
+};
+
+/**
+ * Export stock entries (Stock Master) as CSV (batch-streamed to avoid memory exhaustion).
+ * GET /api/product/stock-entries/export?product_id=&warehouse_id=&brand_id=&product_type_id=&searchkey=
+ *
+ * Mirrors the filter logic of GetStockEntries. For variant-based companies, the
+ * CSV gets extra "Variant" and "Master Pack" columns. Calculated columns
+ * (Safety Factor, Inventory Needed, Total Weight) match the formulas used on
+ * the Stock Master frontend so the CSV is self-consistent with the screen.
+ * Filename: stock_master_YYYYMMDDHHmmss.csv
+ */
+exports.ExportStockEntries = async (req, res) => {
+  try {
+    const { product_id, warehouse_id, brand_id, product_type_id, searchkey } = req.query;
+    const isVariantBased = !!req.user.is_variant_based;
+    const BATCH_SIZE = 200;
+
+    const where = { company_id: req.user.company_id };
+    if (product_id) where.product_id = product_id;
+    if (warehouse_id) where.warehouse_id = warehouse_id;
+
+    let productWhere = {};
+    let brandWhere = null;
+    let isProductRequired = false;
+
+    if (searchkey) {
+      isProductRequired = true;
+      productWhere[Op.or] = [
+        { product_name: { [Op.like]: `%${searchkey}%` } },
+        { sku_product: { [Op.like]: `%${searchkey}%` } },
+        { product_code: { [Op.like]: `%${searchkey}%` } },
+      ];
+    }
+    if (product_type_id) {
+      productWhere.product_type_id = product_type_id;
+      isProductRequired = true;
+    }
+    if (brand_id) {
+      brandWhere = { id: brand_id };
+      isProductRequired = true;
+    }
+
+    const csvEscape = (value) => {
+      if (value === null || value === undefined) return "";
+      const s = String(value);
+      if (/[,"\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const formatNumber = (val) => {
+      if (val === null || val === undefined || val === "") return "0";
+      const n = Number(val);
+      return Number.isFinite(n) ? String(n) : "0";
+    };
+
+    const writeLine = async (line) => {
+      const canContinue = res.write(line);
+      if (!canContinue) {
+        await new Promise((resolve) => res.once("drain", resolve));
+      }
+    };
+
+    const timestamp = moment().format("YYYYMMDDHHmmss");
+    const filename = `stock_master_${timestamp}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headerCols = [
+      "Product Code",
+      "Product Name",
+      "Brand",
+      ...(isVariantBased ? ["Variant", "Master Pack"] : []),
+      "Product Type",
+      "Store",
+      "Category",
+      "Buffer Quantity",
+      "Inventory at Transit",
+      "Inventory at Production",
+      "Available Quantity",
+      "Sale Order Received",
+      "Safety Factor",
+      "Inventory Needed",
+      ...(isVariantBased ? ["Total Weight"] : []),
+    ];
+    await writeLine(headerCols.map(csvEscape).join(",") + "\n");
+
+    let offset = 0;
+    while (true) {
+      const batch = await ProductStockEntry.findAll({
+        attributes: [
+          "id",
+          "quantity",
+          "buffer_size",
+          "inventory_at_transit",
+          "inventory_at_production",
+          "sale_order_recieved",
+        ],
+        where,
+        order: [["id", "DESC"]],
+        limit: BATCH_SIZE,
+        offset,
+        subQuery: false,
+        distinct: true,
+        include: [
+          {
+            association: "productVariant",
+            attributes: ["id", "weight_per_unit", "weight_per_pack"],
+            include: [{ association: "masterUOM", attributes: ["name", "label"] }],
+          },
+          {
+            association: "product",
+            attributes: ["id", "product_name", "sku_product", "product_code", "is_batch_applicable"],
+            where: productWhere,
+            required: isProductRequired,
+            include: [
+              { association: "productCategory", attributes: ["id", "title"] },
+              { association: "masterProductType", attributes: ["name"] },
+              {
+                association: "masterBrand",
+                attributes: ["name"],
+                ...(brandWhere ? { where: brandWhere } : {}),
+                required: brandWhere ? true : false,
+              },
+            ],
+          },
+          { association: "warehouse", attributes: ["id", "name"] },
+        ],
+      });
+
+      if (batch.length === 0) break;
+
+      for (const entry of batch) {
+        const j = entry.toJSON();
+        const buffer = Number(j.buffer_size) || 0;
+        const transit = Number(j.inventory_at_transit) || 0;
+        const production = Number(j.inventory_at_production) || 0;
+        const quantity = Number(j.quantity) || 0;
+        const saleOrderReceived = Number(j.sale_order_recieved) || 0;
+
+        // Match the StockMaster frontend formulas exactly.
+        const safetyFactor = Math.ceil(buffer * (0.5 / 100) * 100) / 100;
+        const bufferRounded = Math.ceil(buffer * 100) / 100;
+        let inventoryNeeded = (bufferRounded + safetyFactor + saleOrderReceived) - (quantity + transit);
+        if (inventoryNeeded < 0) inventoryNeeded = 0;
+
+        const variant = j.productVariant;
+        const variantLabel = isVariantBased && variant
+          ? `${variant.weight_per_unit ?? ""} ${variant.masterUOM?.label || ""}`.trim()
+          : "";
+        const masterPack = isVariantBased ? (variant?.weight_per_pack ?? "") : "";
+
+        let totalWeight = "";
+        if (isVariantBased && variant && variant.weight_per_unit) {
+          const total = quantity * Number(variant.weight_per_unit);
+          if (Number.isFinite(total) && total > 0) {
+            totalWeight = `${total} ${variant.masterUOM?.label || ""}`.trim();
+          }
+        }
+
+        const rowData = [
+          j.product?.product_code,
+          j.product?.product_name,
+          j.product?.masterBrand?.name,
+          ...(isVariantBased ? [variantLabel, masterPack] : []),
+          j.product?.masterProductType?.name,
+          j.warehouse?.name,
+          j.product?.productCategory?.title,
+          formatNumber(bufferRounded),
+          formatNumber(transit),
+          formatNumber(production),
+          formatNumber(quantity),
+          formatNumber(saleOrderReceived),
+          formatNumber(safetyFactor),
+          inventoryNeeded.toFixed(2),
+          ...(isVariantBased ? [totalWeight] : []),
+        ];
+
+        await writeLine(rowData.map(csvEscape).join(",") + "\n");
+      }
+
+      offset += batch.length;
+      if (batch.length < BATCH_SIZE) break;
+    }
+
+    res.end();
+  } catch (error) {
+    console.error("Export stock entries error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: false,
+        message: "Error exporting stock entries",
+        error: error.message,
+      });
+    }
+    res.end();
   }
 };
 
