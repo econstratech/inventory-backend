@@ -213,9 +213,32 @@
 
 /**
  * @swagger
- * /api/company/company-update/{id}:
+ * /api/company/update/{id}:
  *   put:
- *     summary: Update company details
+ *     summary: Update company details, general settings, and owner user
+ *     description: |
+ *       Updates the `companies` row, upserts the linked `general_settings` row, syncs the Owner user
+ *       (`users` row with `position = 'Owner'`), and replaces `allowed_modules` with the provided array.
+ *       The whole update runs in a single transaction; if any step fails everything rolls back.
+ *
+ *       **Email uniqueness**
+ *       - `company_email` must not be used by any other company.
+ *       - `owner_email` must not be used by any other user.
+ *
+ *       **Owner user behaviour**
+ *       - Owner is identified as the most recent user where `company_id` matches and `position = 'Owner'`.
+ *       - When `owner_email` is provided it is also written to the user's `username` to keep them in sync.
+ *       - If no owner user exists for the company, owner fields are silently skipped (creating one would
+ *         require a password which this endpoint does not accept).
+ *
+ *       **General settings coercion**
+ *       - `is_variant_based`, `is_production_planning`, `production_without_bom` accept `"0"`/`"1"` strings or numbers.
+ *       - `production_without_bom` falls back to `0` when missing because the column is NOT NULL.
+ *       - `min_purchase_amount` / `min_sale_amount` accept numeric strings; empty string is stored as `NULL`.
+ *
+ *       **`allowed_modules`**
+ *       - Sent as an array of module IDs. Stored as a JSON-stringified deduped array on `companies.allowed_modules`.
+ *       - At least one module is required.
  *     tags: [Company]
  *     security:
  *       - bearerAuth: []
@@ -226,15 +249,201 @@
  *         schema:
  *           type: integer
  *         description: Company ID
+ *         example: 250
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - company_name
+ *               - company_email
+ *               - company_phone
+ *               - renew_date
+ *               - address
+ *               - allowed_modules
+ *             properties:
+ *               company_name:
+ *                 type: string
+ *                 example: "Codelogicx Technologies Pvt Ltd"
+ *               company_email:
+ *                 type: string
+ *                 format: email
+ *                 description: Must be unique across companies
+ *                 example: "admin@codelogicx.com"
+ *               company_phone:
+ *                 type: string
+ *                 example: "9163673775"
+ *               c_p_isd:
+ *                 type: string
+ *                 description: ISD code for company phone
+ *                 example: "91"
+ *               whatsapp_number:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "7866545611"
+ *               w_isd:
+ *                 type: string
+ *                 nullable: true
+ *                 description: ISD code for WhatsApp number
+ *                 example: "91"
+ *               contact_name:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "Ritika Biswas"
+ *               contact_email:
+ *                 type: string
+ *                 format: email
+ *                 nullable: true
+ *                 example: "hr@codelogicx.com"
+ *               contact_phone:
+ *                 type: string
+ *                 nullable: true
+ *                 example: "7866545611"
+ *               p_isd:
+ *                 type: string
+ *                 nullable: true
+ *                 description: ISD code for contact phone
+ *                 example: "91"
+ *               owner_name:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Updates the Owner user's `name`
+ *                 example: "Amitabh Roy"
+ *               owner_email:
+ *                 type: string
+ *                 format: email
+ *                 nullable: true
+ *                 description: Updates the Owner user's `email` (and `username`); must be unique across users
+ *                 example: "amitabh@codelogicx.com"
+ *               address:
+ *                 type: string
+ *                 example: "Unit 603, Webel Tower II, Sector V, Salt Lake"
+ *               renew_date:
+ *                 type: string
+ *                 format: date
+ *                 example: "2027-06-15"
+ *               is_variant_based:
+ *                 type: string
+ *                 enum: ["0", "1"]
+ *                 description: "0 = No, 1 = Yes (also accepts integers)"
+ *                 example: "0"
+ *               min_purchase_amount:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Numeric string. Empty string maps to NULL.
+ *                 example: ""
+ *               min_sale_amount:
+ *                 type: string
+ *                 nullable: true
+ *                 description: Numeric string. Empty string maps to NULL.
+ *                 example: ""
+ *               is_production_planning:
+ *                 type: string
+ *                 enum: ["0", "1"]
+ *                 description: "0 = No, 1 = Yes (also accepts integers)"
+ *                 example: "0"
+ *               production_without_bom:
+ *                 type: string
+ *                 enum: ["0", "1"]
+ *                 description: |
+ *                   Stored as-is. Note the inverse semantics on the UI: "Has BOM = Yes" is sent as `"0"`,
+ *                   "Has BOM = No" is sent as `"1"`. Defaults to `0` if not provided (column is NOT NULL).
+ *                 example: "0"
+ *               allowed_modules:
+ *                 type: array
+ *                 minItems: 1
+ *                 description: Array of module IDs the company is allowed to access
+ *                 items:
+ *                   type: integer
+ *                 example: [1, 2, 8]
+ *           example:
+ *             company_name: "Codelogicx Technologies Pvt Ltd"
+ *             company_email: "admin@codelogicx.com"
+ *             company_phone: "9163673775"
+ *             c_p_isd: "91"
+ *             whatsapp_number: "7866545611"
+ *             w_isd: "91"
+ *             contact_name: "Ritika Biswas"
+ *             contact_email: "hr@codelogicx.com"
+ *             contact_phone: "7866545611"
+ *             p_isd: "91"
+ *             owner_name: "Amitabh Roy"
+ *             owner_email: "amitabh@codelogicx.com"
+ *             address: "Unit 603, Webel Tower II, Sector V, Salt Lake"
+ *             renew_date: "2027-06-15"
+ *             is_variant_based: "0"
+ *             min_purchase_amount: ""
+ *             min_sale_amount: ""
+ *             is_production_planning: "0"
+ *             production_without_bom: "0"
+ *             allowed_modules: [1, 2, 8]
  *     responses:
  *       200:
  *         description: Company updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Company details updated successfully."
+ *       400:
+ *         description: Validation error or email already in use by another company/user
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   examples:
+ *                     missing_required:
+ *                       summary: Missing required field
+ *                       value: "Company name is required."
+ *                     no_modules:
+ *                       summary: No module selected
+ *                       value: "Please select at least one module."
+ *                     company_email_taken:
+ *                       summary: Company email belongs to another record
+ *                       value: "Another company is already using this email."
+ *                     owner_email_taken:
+ *                       summary: Owner email belongs to another user
+ *                       value: "Another user is already using this owner email."
+ *       404:
+ *         description: Company not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Company not found."
+ *       500:
+ *         description: Unexpected server error (transaction rolled back)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error while updating company."
  */
 
 /**

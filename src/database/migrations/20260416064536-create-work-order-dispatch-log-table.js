@@ -60,7 +60,7 @@ exports.up = function(db) {
         }
       }
     },
-    dispacthed_at: {
+    dispatched_at: {
       type: 'datetime',
       notNull: true,
       defaultValue: new String('CURRENT_TIMESTAMP'),

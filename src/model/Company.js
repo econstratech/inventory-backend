@@ -28,7 +28,6 @@ const Company = sequelize.define(
             type: DataTypes.STRING,
             allowNull: true,
         },
-
         address: {
             type: DataTypes.STRING,
             allowNull: true,
@@ -57,7 +56,6 @@ const Company = sequelize.define(
             type: DataTypes.STRING,
             allowNull: true,
         },
-
         whatsapp_number: {
             type: DataTypes.STRING,
             allowNull: true,
@@ -101,6 +99,10 @@ const Company = sequelize.define(
         is_delete: {
             type: DataTypes.INTEGER,
             defaultValue: 1,
+        },
+        allowed_modules: {
+            type: DataTypes.STRING,
+            allowNull: true,
         }
     },
     {

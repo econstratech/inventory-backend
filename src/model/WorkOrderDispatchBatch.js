@@ -1,7 +1,7 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
-const WorkOrderDispatchLog = sequelize.define('work_order_dispatch_logs', {
+const WorkOrderDispatchBatch = sequelize.define('work_order_dispatch_batches', {
     id: {
         type: DataTypes.BIGINT,
         primaryKey: true,
@@ -15,22 +15,29 @@ const WorkOrderDispatchLog = sequelize.define('work_order_dispatch_logs', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
-    dispatched_qty: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
-    },
-    dispatch_note: {
-        type: DataTypes.TEXT,
-        allowNull: true,
-    },
-    dispatched_by: {
+    dispatch_log_id: {
         type: DataTypes.BIGINT,
         allowNull: true,
     },
-    dispatched_at: {
-        type: DataTypes.DATE,
+    batch_no: {
+        type: DataTypes.STRING,
         allowNull: false,
-        defaultValue: DataTypes.NOW,
+    },
+    mfg_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+    },
+    exp_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+    },
+    quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    user_id: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
     },
     created_at: {
         type: DataTypes.DATE,
@@ -38,10 +45,12 @@ const WorkOrderDispatchLog = sequelize.define('work_order_dispatch_logs', {
         defaultValue: DataTypes.NOW,
     },
 }, {
-    tableName: 'work_order_dispatch_logs',
+    tableName: 'work_order_dispatch_batches',
     timestamps: true,
+    paranoid: true,
     createdAt: 'created_at',
-    updatedAt: false,
+    updatedAt: 'updated_at',
+    deletedAt: 'deleted_at'
 });
 
-module.exports = WorkOrderDispatchLog;
+module.exports = WorkOrderDispatchBatch;

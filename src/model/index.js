@@ -54,6 +54,7 @@ const WorkOrderDispatchLog = require('./WorkOrderDispatchLog');
 const ProductionPlanning = require('./ProductionPlanning');
 const ProductionActuals = require('./ProductionActuals');
 const WorkOrderMaterialMapping = require('./WorkOrderMaterialMapping');
+const WorkOrderDispatchBatch = require('./WorkOrderDispatchBatch');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -392,6 +393,7 @@ WorkOrder.belongsTo(CompanyProductionStep, { foreignKey: 'production_step_id', a
 WorkOrder.belongsTo(ProductionPlanning, { foreignKey: 'production_planning_id', as: 'productionPlanning' });
 WorkOrder.hasMany(WorkOrderStep, { foreignKey: 'wo_id', as: 'workOrderSteps' });
 WorkOrder.hasMany(WorkOrderMaterialIssue, { foreignKey: 'wo_id', as: 'workOrderMaterialIssues' });
+WorkOrder.hasMany(WorkOrderDispatchLog, { foreignKey: 'work_order_id', as: 'dispatchLog' });
 WorkOrder.belongsTo(User, { foreignKey: 'material_issued_by', as: 'materialIssuedBy' });
 WorkOrder.belongsTo(User, { foreignKey: 'production_completed_by', as: 'productionCompletedBy' });
 WorkOrderStep.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
@@ -407,6 +409,7 @@ ProductionActivityLog.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder
 ProductionActivityLog.belongsTo(User, { foreignKey: 'created_by', as: 'createdBy' });
 ProductionActivityLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
+WorkOrderDispatchLog.hasMany(WorkOrderDispatchBatch, { foreignKey: 'dispatch_log_id', as: 'batches' });
 WorkOrderDispatchLog.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
 WorkOrderDispatchLog.belongsTo(User, { foreignKey: 'dispatched_by', as: 'dispatchedBy' });
 
@@ -424,6 +427,10 @@ WorkOrderMaterialMapping.belongsTo(Company, { foreignKey: 'company_id', as: 'com
 WorkOrderMaterialMapping.belongsTo(Product, { foreignKey: 'fg_product_id', as: 'fgProduct' });
 WorkOrderMaterialMapping.belongsTo(ProductVariant, { foreignKey: 'fg_product_variant_id', as: 'fgProductVariant' });
 WorkOrderMaterialMapping.belongsTo(Product, { foreignKey: 'rm_product_id', as: 'rmProduct' });
+
+WorkOrderDispatchBatch.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+WorkOrderDispatchBatch.hasOne(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
+WorkOrderDispatchBatch.belongsTo(WorkOrderDispatchLog, { foreignKey: 'dispatch_log_id', as: 'dispatchLog' });
 
 module.exports = {
     Module,
@@ -477,5 +484,6 @@ module.exports = {
     WorkOrderDispatchLog,
     ProductionPlanning,
     ProductionActuals,
-    WorkOrderMaterialMapping
+    WorkOrderMaterialMapping,
+    WorkOrderDispatchBatch
 };

@@ -22,7 +22,7 @@
  *         schema:
  *           type: string
  *           format: date
- *         description: Filter from this date (inclusive). Applied to `created_at` for created WOs, `production_completed_at` for completed WOs, and `dispacthed_at` for dispatches.
+ *         description: Filter from this date (inclusive). Applied to `created_at` for created WOs, `production_completed_at` for completed WOs, and `dispatched_at` for dispatches.
  *         example: "2026-04-01"
  *       - in: query
  *         name: date_to
@@ -360,10 +360,49 @@
  *                 nullable: true
  *                 description: Optional dispatch remarks
  *                 example: "First batch shipped via courier"
+ *               batches:
+ *                 type: array
+ *                 nullable: true
+ *                 description: Optional list of batches associated with this dispatch. Each entry is persisted in WorkOrderDispatchBatch.
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - batch_no
+ *                   properties:
+ *                     batch_no:
+ *                       type: string
+ *                       description: Batch number/identifier
+ *                       example: "BATCH-2026-001"
+ *                     mfg_date:
+ *                       type: string
+ *                       format: date
+ *                       nullable: true
+ *                       description: Manufacturing date (YYYY-MM-DD)
+ *                       example: "2026-04-20"
+ *                     exp_date:
+ *                       type: string
+ *                       format: date
+ *                       nullable: true
+ *                       description: Expiry date (YYYY-MM-DD)
+ *                       example: "2027-04-20"
+ *                     quantity:
+ *                       type: number
+ *                       nullable: true
+ *                       description: Quantity for this batch
+ *                       example: 10
  *           example:
  *             dispatched_qty: 15
  *             dispatch_status: 1
  *             dispatch_note: "First batch shipped via courier"
+ *             batches:
+ *               - batch_no: "BATCH-2026-001"
+ *                 mfg_date: "2026-04-20"
+ *                 exp_date: "2027-04-20"
+ *                 quantity: 10
+ *               - batch_no: "BATCH-2026-002"
+ *                 mfg_date: "2026-04-21"
+ *                 exp_date: "2027-04-21"
+ *                 quantity: 5
  *     responses:
  *       200:
  *         description: Work order dispatched successfully
@@ -444,7 +483,7 @@
  *                         example: "First batch shipped"
  *                       dispatched_by:
  *                         type: integer
- *                       dispacthed_at:
+ *                       dispatched_at:
  *                         type: string
  *                         format: date-time
  *                       dispatchedBy:

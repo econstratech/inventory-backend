@@ -10,7 +10,8 @@ const {
     CompanyProductionStep,
     ProductionPlanning,
     ProductionActuals,
-    ProductStockEntry
+    ProductStockEntry,
+    WorkOrderDispatchBatch
 } = require("../model")
 const WorkOrderDispatchLog = require("../model/WorkOrderDispatchLog");
 const CommonHelper = require("../helpers/commonHelper");
@@ -76,13 +77,13 @@ exports.GetMonthlyTrend = async (req, res) => {
         // Dispatches per month
         const dispatchWhere = {};
         if (date_from && date_to) {
-            dispatchWhere.dispacthed_at = {
+            dispatchWhere.dispatched_at = {
                 [Op.between]: [new Date(date_from), new Date(date_to + "T23:59:59.999Z")],
             };
         } else if (date_from) {
-            dispatchWhere.dispacthed_at = { [Op.gte]: new Date(date_from) };
+            dispatchWhere.dispatched_at = { [Op.gte]: new Date(date_from) };
         } else if (date_to) {
-            dispatchWhere.dispacthed_at = { [Op.lte]: new Date(date_to + "T23:59:59.999Z") };
+            dispatchWhere.dispatched_at = { [Op.lte]: new Date(date_to + "T23:59:59.999Z") };
         }
 
         // Filter dispatch logs by company through work order
@@ -99,10 +100,10 @@ exports.GetMonthlyTrend = async (req, res) => {
             dispatchByMonth = await WorkOrderDispatchLog.findAll({
                 where: dispatchWhere,
                 attributes: [
-                    [sequelize.fn('DATE_FORMAT', sequelize.col('dispacthed_at'), '%Y-%m'), 'ym'],
+                    [sequelize.fn('DATE_FORMAT', sequelize.col('dispatched_at'), '%Y-%m'), 'ym'],
                     [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
                 ],
-                group: [sequelize.fn('DATE_FORMAT', sequelize.col('dispacthed_at'), '%Y-%m')],
+                group: [sequelize.fn('DATE_FORMAT', sequelize.col('dispatched_at'), '%Y-%m')],
                 raw: true,
             });
         }
@@ -408,8 +409,11 @@ exports.dispatchWorkOrder = async (req, res) => {
         const {
             dispatched_qty, 
             dispatch_status, 
-            dispatch_note = null 
+            dispatch_note = null,
+            batches
         } = req.body;
+        const companyId = req.user.company_id;
+        const userId = req.user.id;
 
         // get the work order details
         const [workOrder, previouslyDispatchedQty] = await Promise.all([
@@ -445,13 +449,13 @@ exports.dispatchWorkOrder = async (req, res) => {
         }
 
         // Log the dispatch details in WorkOrderDispatchLog
-        await WorkOrderDispatchLog.create({
-            company_id: req.user.company_id,
+        const dispatchLog = await WorkOrderDispatchLog.create({
+            company_id: companyId,
             work_order_id: wo_id,
             dispatched_qty,
             dispatch_note,
-            dispatched_by: req.user.id,
-            dispacthed_at: new Date(),
+            dispatched_by: userId,
+            dispatched_at: new Date(),
         }, { transaction });
 
         await WorkOrder.update({
@@ -461,6 +465,23 @@ exports.dispatchWorkOrder = async (req, res) => {
             where: { id: wo_id },
             transaction,
         });
+
+        // Register the provided batches if exists
+        if (batches && batches.length > 0) {
+            const batchCreatePayload = batches.map((b) => {
+                return {
+                    work_order_id: wo_id,
+                    company_id: companyId,
+                    user_id: userId,
+                    dispatch_log_id: dispatchLog.id,
+                    batch_no: b.batch_no,
+                    mfg_date: b.mfg_date || null,
+                    exp_date: b.exp_date || null,
+                    quantity: b.quantity != null && b.quantity !== '' ? Number(b.quantity) : null,
+                }
+            });
+            await WorkOrderDispatchBatch.bulkCreate(batchCreatePayload, { transaction });
+        }
 
         // If fully dispatched, update the stock quantity in ProductStockEntry for the finished goods
         if (finalStatus === 2) {
@@ -516,14 +537,18 @@ exports.GetDispatchHistory = async (req, res) => {
         // get the dispatch logs for the work order
         const dispatchLogs = await WorkOrderDispatchLog.findAll({
             where: { work_order_id: wo_id },
-            attributes: ['id', 'dispatched_qty', 'dispatch_note', 'dispacthed_at'],
+            attributes: ['id', 'dispatched_qty', 'dispatch_note', 'dispatched_at'],
             include: [
                 {
                     association: 'dispatchedBy',
                     attributes: ['id', 'name'],
+                },
+                {
+                    association: 'batches',
+                    attributes: ['id', 'batch_no', 'mfg_date', 'exp_date', 'quantity']
                 }
             ],
-            order: [['dispacthed_at', 'DESC']],
+            order: [['dispatched_at', 'DESC']],
         });
 
         return res.status(200).json({

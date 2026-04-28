@@ -7,9 +7,16 @@ const Module = sequelize.define("Module", {
     type: DataTypes.STRING,
     allowNull: false,
   },
+  is_main_module: {
+    type: DataTypes.SMALLINT,
+    allowNull: true,
+    defaultValue:0
+  }
 }, {
   tableName: "modules",
   timestamps: false,
+  createdAt: 'created_at',
+  updatedAt: 'updated_at'
 });
 
 Module.hasMany(Permission, {

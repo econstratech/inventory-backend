@@ -1959,6 +1959,20 @@ exports.getDispatchReport = async (req, res) => {
           association: "product",
           attributes: ["id", "product_name", "product_code"],
         },
+        {
+          association: 'dispatchLog',
+          attributes: ['id', 'dispatched_qty', 'dispatch_note', 'dispatched_at'],
+          include: [
+            {
+              association: 'dispatchedBy',
+              attributes: ['id', 'name']
+            },
+            {
+              association: 'batches',
+              attributes: ['id', 'batch_no', 'quantity', 'mfg_date', 'exp_date']
+            }
+          ]
+        },
         ...(isVariantBased
           ? [
               {
@@ -2078,11 +2092,13 @@ exports.getDispatchReport = async (req, res) => {
         fg_variant: fgVariant,
         planned_qty: Number(woJSON.planned_qty) || 0,
         raw_material_used_qty: rawMaterialUsedQty,
+        dispatched_quantity: (woJSON.dispatchLog || []).reduce((sum, d) => sum + (Number(d.dispatched_qty) || 0), 0),
         dispatch_status: Number(woJSON.dispatch_status) || 0,
         dispatch_status_label:
           dispatchStatusLabelMap[Number(woJSON.dispatch_status) || 0],
         dispatch_completed_at: woJSON.dispatch_completed_at,
         production_completed_at: woJSON.production_completed_at,
+        dispatch_log: woJSON.dispatchLog
       };
 
       if (isVariantBased) {
