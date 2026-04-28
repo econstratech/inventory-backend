@@ -11,7 +11,8 @@ const {
     User, 
     CompanyProductionFlow, 
     CompanyProductionStep,
-    ProductionStepsMaster
+    ProductionStepsMaster,
+    Module
 } = require("../model")
 const OfficeTimeModel = require("../model/OfficeTimeModel")
 const NotificationSettingModel = require("../model/NotificationSettingModel")
@@ -44,6 +45,8 @@ exports.GetActiveCompany = async (req, res) => {
             'company_name', 
             'company_email', 
             'company_phone',
+            'renew_type',
+            'start_date',
             'renew_date',
             'c_p_isd',
             'p_isd',
@@ -70,9 +73,25 @@ exports.GetActiveCompany = async (req, res) => {
                 where: { status: 1, position: 'Owner' },
                 order: [['id', 'DESC']],
                 limit: 1,
-            }, {
+            }, 
+            {
                 association: 'generalSettings',
-                attributes: ['id', 'currency_code', 'currency_name', 'symbol', 'timezone', 'companyAddress', 'is_variant_based'],
+                attributes: [
+                    'id',
+                    'currency_code', 
+                    'currency_name', 
+                    'symbol', 
+                    'timezone', 
+                    'companyAddress',
+                    'deliveryAddress',
+                    'min_purchase_amount',
+                    'min_sale_amount',
+                    'enableBatchNumber',
+                    'is_variant_based',
+                    'has_master_pack',
+                    'is_production_planning',
+                    'production_without_bom'
+                ],
             }
         ]
     });
@@ -92,6 +111,75 @@ exports.GetInactiveCompany = async (req, res) => {
         where: { is_delete: 0, status: 0 }
     })
     return res.status(200).json({ data: company })
+}
+
+exports.GetCompanyDetails = async (req, res) => {
+    try {
+        const companyId = req.params.id;
+        const companyDetails = await Company.findOne({
+            attributes: [
+                'id', 
+                'company_name', 
+                'company_email', 
+                'company_phone',
+                'renew_type',
+                'start_date',
+                'renew_date',
+                'c_p_isd',
+                'p_isd',
+                'address', 
+                'whatsapp_number',
+                'w_isd',
+                'contact_name',
+                'contact_email',
+                'contact_phone',
+                'allowed_modules'
+            ],
+            where: { id: companyId },
+            include: [
+                {
+                    association: 'generalSettings',
+                    attributes: [
+                        'id',
+                        'currency_code', 
+                        'currency_name', 
+                        'symbol', 
+                        'timezone', 
+                        'companyAddress',
+                        'deliveryAddress',
+                        'min_purchase_amount',
+                        'min_sale_amount',
+                        'enableBatchNumber',
+                        'is_variant_based',
+                        'has_master_pack',
+                        'is_production_planning',
+                        'production_without_bom'
+                    ],
+                }
+            ]
+        });
+
+        const modules = await Module.findAll({
+            attributes: ['id', 'name', 'is_main_module'],
+            where: { is_main_module: 1 },
+            raw: true,
+        });
+
+        return res.status(200).json({
+            status: true,
+            message: "Company details fetched successfully.",
+            data: {
+                companyDetails,
+                modules
+            }
+        });
+    } catch (error) {
+        console.log("Error in fetch company details:", error);
+        return res.status(500).json({
+            status: false,
+            message: error.message || "Error!! company details"
+        });
+    }
 }
 
 exports.CompanyStatusChnage = async (req, res) => {
@@ -283,6 +371,232 @@ exports.CreateCompany = async (req, res) => {
     }
 }
 
+
+/**
+ * Update an existing company along with its general settings, owner user
+ * and allowed modules.
+ *
+ * Expected body (all keys optional unless marked required by validation):
+ *   company_name, company_email, company_phone, c_p_isd,
+ *   whatsapp_number, w_isd,
+ *   contact_name, contact_email, contact_phone, p_isd,
+ *   owner_name, owner_email,
+ *   address, renew_date,
+ *   is_variant_based, min_purchase_amount, min_sale_amount,
+ *   is_production_planning, production_without_bom,
+ *   allowed_modules: number[]
+ *
+ * @param {Object} req
+ * @param {Object} res
+ * @returns {Promise<void>}
+ */
+exports.UpdateCompany = async (req, res) => {
+    let transaction = null;
+    try {
+        const companyId = req.params.id;
+        if (!companyId) {
+            return res.status(400).json({ status: false, message: "Company id is required." });
+        }
+
+        const {
+            company_name,
+            company_email,
+            company_phone,
+            c_p_isd,
+            whatsapp_number,
+            w_isd,
+            contact_name,
+            contact_email,
+            contact_phone,
+            p_isd,
+            owner_name,
+            owner_email,
+            address,
+            renew_date,
+            is_variant_based,
+            min_purchase_amount,
+            min_sale_amount,
+            is_production_planning,
+            production_without_bom,
+            allowed_modules,
+        } = req.body || {};
+
+        // basic required-field validation matching the frontend
+        if (!company_name || !String(company_name).trim()) {
+            return res.status(400).json({ status: false, message: "Company name is required." });
+        }
+        if (!company_email || !String(company_email).trim()) {
+            return res.status(400).json({ status: false, message: "Company email is required." });
+        }
+        if (!company_phone || !String(company_phone).trim()) {
+            return res.status(400).json({ status: false, message: "Company phone is required." });
+        }
+        if (!renew_date) {
+            return res.status(400).json({ status: false, message: "Renew date is required." });
+        }
+        if (!address || !String(address).trim()) {
+            return res.status(400).json({ status: false, message: "Address is required." });
+        }
+        if (!Array.isArray(allowed_modules) || allowed_modules.length === 0) {
+            return res.status(400).json({ status: false, message: "Please select at least one module." });
+        }
+
+        // ensure the company exists
+        const existingCompany = await Company.findOne({ where: { id: companyId } });
+        if (!existingCompany) {
+            return res.status(404).json({ status: false, message: "Company not found." });
+        }
+
+        // ensure company_email is unique (excluding the current company)
+        const trimmedCompanyEmail = String(company_email).trim();
+        if (trimmedCompanyEmail !== (existingCompany.company_email || "").trim()) {
+            const emailClash = await Company.findOne({
+                where: { company_email: trimmedCompanyEmail, id: { [Op.ne]: companyId } },
+                attributes: ["id"],
+                raw: true,
+            });
+            if (emailClash) {
+                return res.status(400).json({ status: false, message: "Another company is already using this email." });
+            }
+        }
+
+        // helpers to coerce values that arrive as strings from the form
+        const toSmallInt = (v) => {
+            if (v === "" || v === null || v === undefined) return null;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+        };
+        const toDecimalOrNull = (v) => {
+            if (v === "" || v === null || v === undefined) return null;
+            const n = Number(v);
+            return Number.isFinite(n) ? n : null;
+        };
+
+        const sanitizedAllowedModules = Array.from(
+            new Set(
+                allowed_modules
+                    .map((id) => Number(id))
+                    .filter((n) => Number.isFinite(n))
+            )
+        );
+
+        transaction = await sequelize.transaction();
+
+        // 1) Update the company record
+        await Company.update(
+            {
+                company_name: String(company_name).trim(),
+                company_email: trimmedCompanyEmail,
+                company_phone: String(company_phone).trim(),
+                c_p_isd: c_p_isd || null,
+                whatsapp_number: whatsapp_number ? String(whatsapp_number).trim() : null,
+                w_isd: w_isd || null,
+                contact_name: contact_name ? String(contact_name).trim() : null,
+                contact_email: contact_email ? String(contact_email).trim() : null,
+                contact_phone: contact_phone ? String(contact_phone).trim() : null,
+                p_isd: p_isd || null,
+                address: String(address).trim(),
+                renew_date,
+                allowed_modules: JSON.stringify(sanitizedAllowedModules),
+            },
+            { where: { id: companyId }, transaction }
+        );
+
+        // 2) Upsert general settings for this company
+        const generalSettingsPayload = {
+            is_variant_based: toSmallInt(is_variant_based),
+            min_purchase_amount: toDecimalOrNull(min_purchase_amount),
+            min_sale_amount: toDecimalOrNull(min_sale_amount),
+            is_production_planning: toSmallInt(is_production_planning),
+            production_without_bom: toSmallInt(production_without_bom) ?? 0, // not-null in schema
+        };
+
+        const existingSettings = await GeneralSettings.findOne({
+            where: { company_id: companyId },
+            transaction,
+        });
+        if (existingSettings) {
+            await GeneralSettings.update(generalSettingsPayload, {
+                where: { company_id: companyId },
+                transaction,
+            });
+        } else {
+            await GeneralSettings.create(
+                {
+                    company_id: companyId,
+                    timezone: "Asia/Calcutta",
+                    currency_name: "Indian Rupee",
+                    currency_code: "INR",
+                    symbol: "₹",
+                    companyAddress: String(address).trim(),
+                    deliveryAddress: String(address).trim(),
+                    ...generalSettingsPayload,
+                },
+                { transaction }
+            );
+        }
+
+        // 3) Update the owner user (if any). Owner is identified by company + position.
+        const trimmedOwnerEmail = owner_email ? String(owner_email).trim() : null;
+        const trimmedOwnerName = owner_name ? String(owner_name).trim() : null;
+        if (trimmedOwnerName || trimmedOwnerEmail) {
+            const ownerUser = await User.findOne({
+                where: { company_id: companyId, position: "Owner" },
+                order: [["id", "DESC"]],
+                transaction,
+            });
+
+            if (ownerUser) {
+                // if email changing, make sure no other user already has it
+                if (trimmedOwnerEmail && trimmedOwnerEmail !== (ownerUser.email || "").trim()) {
+                    const emailTaken = await User.findOne({
+                        where: { email: trimmedOwnerEmail, id: { [Op.ne]: ownerUser.id } },
+                        attributes: ["id"],
+                        raw: true,
+                        transaction,
+                    });
+                    if (emailTaken) {
+                        await transaction.rollback();
+                        transaction = null;
+                        return res.status(400).json({
+                            status: false,
+                            message: "Another user is already using this owner email.",
+                        });
+                    }
+                }
+
+                await User.update(
+                    {
+                        ...(trimmedOwnerName ? { name: trimmedOwnerName } : {}),
+                        ...(trimmedOwnerEmail
+                            ? { email: trimmedOwnerEmail, username: trimmedOwnerEmail }
+                            : {}),
+                    },
+                    { where: { id: ownerUser.id }, transaction }
+                );
+            }
+            // if no owner user exists yet we silently skip — creating one would
+            // require a password which the edit form doesn't collect.
+        }
+
+        await transaction.commit();
+        transaction = null;
+
+        return res.status(200).json({
+            status: true,
+            message: "Company details updated successfully.",
+        });
+    } catch (error) {
+        if (transaction) {
+            try { await transaction.rollback(); } catch (_) { /* ignore */ }
+        }
+        console.log("Error while updating company:", error);
+        return res.status(500).json({
+            status: false,
+            message: error.message || "Error while updating company.",
+        });
+    }
+}
 
 exports.UserList = async (req, res) => {
     try {
