@@ -521,6 +521,7 @@ exports.dispatchWorkOrder = async (req, res) => {
         });
     } catch (error) {
         console.error("Error dispatching work order:", error);
+        await transaction.rollback();
         return res.status(500).json({ status: false, message: "Error dispatching work order", error: error.message });
     }
 }
