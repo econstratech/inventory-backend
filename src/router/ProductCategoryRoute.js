@@ -4,8 +4,7 @@ const {
     CreateProductCategory, 
     GetAllProductCategories, 
     UpdateProductCat, 
-    DeleteProductscat, 
-    // GetAllProductscatupdate, 
+    DeleteProductscat,
     UploadCategory 
 } = require("../controller/ProductCategoryController");
 const { authToken } = require("../utils/Middleware");
@@ -15,7 +14,6 @@ const router = express.Router();
 
 router.post('/',authToken, CreateProductCategory);
 router.get("/",authToken,GetAllProductCategories);
-// router.get("/all-products-catupdate/:id",authToken, GetAllProductscatupdate);
 router.put("/:id",authToken,UpdateProductCat);
 router.delete('/:id',authToken, DeleteProductscat);
 router.post('/upload', authToken, upload.single('file'), UploadCategory);
