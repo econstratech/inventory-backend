@@ -1,3 +1,6 @@
+const fs = require("fs");
+const path = require("path");
+const csv = require("csv-parser");
 const { Op } = require("sequelize")
 const sequelize = require("../database/db-connection");
 
@@ -8,12 +11,14 @@ const {
     Warehouse,
     Product,
     ProductVariant,
+    MasterUOM,
     WorkOrderMaterialIssue,
     WorkOrderMaterialMapping,
     CompanyProductionStep,
     ProductStockEntry,
 } = require("../model")
 const CommonHelper = require("../helpers/commonHelper");
+const { uploadDir } = require("../utils/handlersbluk");
 
 /**
  * Create a new work order
@@ -1785,6 +1790,244 @@ exports.DeleteMaterialMapping = async (req, res) => {
         return res.status(500).json({
             status: false,
             message: "Error deleting material mapping",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Parse CSV file to array of rows (keyed by header names)
+ * @param {string} filePath
+ * @returns {Promise<object[]>}
+ */
+const parseCSVFile = (filePath) => {
+    return new Promise((resolve, reject) => {
+        const rows = [];
+        fs.createReadStream(filePath)
+            .pipe(csv())
+            .on("data", (row) => rows.push(row))
+            .on("end", () => resolve(rows))
+            .on("error", reject);
+    });
+};
+
+/**
+ * Bulk upload work-order material mappings (FG → RM) from a CSV file using product names.
+ * CSV headers: "FG Product" (required), "FG Variant" (optional, UOM label), "RM Product" (required).
+ * Looks up products by `product_name` within the user's company. For variant-based companies,
+ * "FG Variant" is matched against `MasterUOM.label` and resolved to one of the FG product's variants.
+ * Rows that would duplicate an existing mapping (or another row in the same upload) are skipped.
+ * @param {Object} req - Express request object (multer-populated `req.file`)
+ * @param {Object} res - Express response object
+ * @returns {Promise<void>}
+ */
+exports.BulkUploadMaterialMapping = async (req, res) => {
+    let filePath = null;
+    const transaction = await sequelize.transaction();
+
+    try {
+        if (!req.file?.filename) {
+            return res.status(400).json({
+                status: false,
+                message: "No file uploaded.",
+            });
+        }
+
+        const company_id = req.user.company_id;
+        const isVariantBased = req.user.is_variant_based;
+
+        filePath = path.join(uploadDir, req.file.filename);
+
+        if (path.extname(req.file.filename).toLowerCase() !== ".csv") {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({
+                status: false,
+                message: "Only CSV files allowed.",
+            });
+        }
+
+        const rows = await parseCSVFile(filePath);
+
+        const parsed = [];
+        const productNames = new Set();
+        const uomLabels = new Set();
+
+        for (const row of rows) {
+            const fg = row["FG Product"]?.trim();
+            const rm = row["RM Product"]?.trim();
+            const fgVariant = row["FG Variant"]?.trim() || null;
+
+            if (!fg || !rm) continue;
+
+            parsed.push({ fg, rm, fgVariant, _row: row });
+            productNames.add(fg);
+            productNames.add(rm);
+            if (fgVariant) uomLabels.add(fgVariant);
+        }
+
+        if (!parsed.length) {
+            throw new Error("No valid rows found in the uploaded file.");
+        }
+
+        // Bulk fetch products by name within the company (active only)
+        const products = await Product.findAll({
+            where: {
+                company_id,
+                product_name: [...productNames],
+                status: 1,
+            },
+            attributes: ["id", "product_name"],
+            raw: true,
+        });
+
+        const productMap = {};
+        products.forEach((p) => {
+            if (!productMap[p.product_name]) {
+                productMap[p.product_name] = p.id;
+            }
+        });
+
+        // For variant-based companies: resolve UOM labels and matching product variants
+        const uomMap = {};
+        const fgVariantMap = {}; // key: `${product_id}_${uom_id}` -> variant_id
+        if (isVariantBased && uomLabels.size > 0) {
+            const uoms = await MasterUOM.findAll({
+                where: { label: [...uomLabels], is_active: 1 },
+                attributes: ["id", "label"],
+                raw: true,
+            });
+            uoms.forEach((u) => { uomMap[u.label] = u.id; });
+
+            const fgProductIds = parsed
+                .map((p) => productMap[p.fg])
+                .filter(Boolean);
+            const uomIds = Object.values(uomMap);
+
+            if (fgProductIds.length && uomIds.length) {
+                const variants = await ProductVariant.findAll({
+                    where: {
+                        company_id,
+                        product_id: fgProductIds,
+                        uom_id: uomIds,
+                    },
+                    attributes: ["id", "product_id", "uom_id"],
+                    raw: true,
+                });
+                variants.forEach((v) => {
+                    fgVariantMap[`${v.product_id}_${v.uom_id}`] = v.id;
+                });
+            }
+        }
+
+        const candidates = [];
+        const errors = [];
+        const seenInUpload = new Set();
+
+        for (const item of parsed) {
+            const fgId = productMap[item.fg];
+            const rmId = productMap[item.rm];
+
+            if (!fgId) {
+                errors.push({ row: item._row, reason: `FG Product not found: ${item.fg}` });
+                continue;
+            }
+            if (!rmId) {
+                errors.push({ row: item._row, reason: `RM Product not found: ${item.rm}` });
+                continue;
+            }
+
+            let fgVariantId = null;
+            if (item.fgVariant) {
+                const uomId = uomMap[item.fgVariant];
+                if (!uomId) {
+                    errors.push({ row: item._row, reason: `FG Variant (UOM) not found: ${item.fgVariant}` });
+                    continue;
+                }
+                fgVariantId = fgVariantMap[`${fgId}_${uomId}`] || null;
+                if (!fgVariantId) {
+                    errors.push({
+                        row: item._row,
+                        reason: `FG Variant '${item.fgVariant}' is not configured for product '${item.fg}'`,
+                    });
+                    continue;
+                }
+            }
+
+            const dedupKey = `${fgId}|${fgVariantId ?? "null"}|${rmId}`;
+            if (seenInUpload.has(dedupKey)) {
+                errors.push({ row: item._row, reason: "Duplicate row within the uploaded file (skipped)" });
+                continue;
+            }
+            seenInUpload.add(dedupKey);
+
+            candidates.push({
+                company_id,
+                fg_product_id: fgId,
+                fg_product_variant_id: fgVariantId,
+                rm_product_id: rmId,
+                _row: item._row,
+            });
+        }
+
+        if (!candidates.length) {
+            throw new Error("No valid rows after validation.");
+        }
+
+        // Filter out triples that already exist for this company
+        const existing = await WorkOrderMaterialMapping.findAll({
+            attributes: ["fg_product_id", "fg_product_variant_id", "rm_product_id"],
+            where: {
+                company_id,
+                [Op.or]: candidates.map((c) => ({
+                    fg_product_id: c.fg_product_id,
+                    fg_product_variant_id: c.fg_product_variant_id,
+                    rm_product_id: c.rm_product_id,
+                })),
+            },
+            transaction,
+            raw: true,
+        });
+
+        const existingKeys = new Set(
+            existing.map((e) => `${e.fg_product_id}|${e.fg_product_variant_id ?? "null"}|${e.rm_product_id}`)
+        );
+
+        const toInsert = [];
+        for (const c of candidates) {
+            const key = `${c.fg_product_id}|${c.fg_product_variant_id ?? "null"}|${c.rm_product_id}`;
+            if (existingKeys.has(key)) {
+                errors.push({ row: c._row, reason: "Mapping already exists for this FG and RM (skipped)" });
+                continue;
+            }
+            // strip the `_row` helper before insert
+            const { _row, ...record } = c;
+            toInsert.push(record);
+        }
+
+        if (!toInsert.length) {
+            throw new Error("All rows are duplicates of existing mappings.");
+        }
+
+        const created = await WorkOrderMaterialMapping.bulkCreate(toInsert, { transaction });
+        await transaction.commit();
+
+        fs.unlinkSync(filePath);
+
+        return res.status(201).json({
+            status: true,
+            message: `${created.length} material mapping${created.length > 1 ? "s" : ""} uploaded successfully`,
+            created: created.length,
+            ...(errors.length ? { errors } : {}),
+        });
+    } catch (error) {
+        console.error("Error in bulk upload material mapping:", error);
+        await transaction.rollback();
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        return res.status(500).json({
+            status: false,
+            message: "Error uploading material mapping",
             error: error.message,
         });
     }

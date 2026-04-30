@@ -1348,7 +1348,7 @@ exports.receiveSalesProduct = async (req, res) => {
     if (transaction) {
       await transaction.rollback();
     }
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       status: false,
       error: error.message || "An error occurred while receiving the sales product",
     });
@@ -4032,10 +4032,10 @@ exports.ApprovedByManagement = async (req, res) => {
       await transaction.rollback();
     }
     console.error("Transaction rolled back due to error:", error);
-    return res.status(500).json({ 
-      status: false, 
-      message: "An error occurred while updating and approving the sales quotation", 
-      error: error.message 
+    return res.status(error.status || 500).json({
+      status: false,
+      message: error.message ?? "An error occurred while updating and approving the sales quotation",
+      error: error.message
     });
   }
 };
@@ -4054,11 +4054,17 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
         {
           association: 'product',
           attributes: ['id', 'product_name'],
+        },
+        {
+          association: 'warehouse',
+          attributes: ['id', 'name']
         }
       ]
     });
     if (!stockEntry) {
-      throw new Error("Stock entry not found");
+      const err = new Error("Item is not available in stock");
+      err.status = 400;
+      throw err;
     }
     if (status === 9) {
       // update the stock entry
