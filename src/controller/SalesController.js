@@ -4055,10 +4055,6 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
           association: 'product',
           attributes: ['id', 'product_name'],
         },
-        {
-          association: 'warehouse',
-          attributes: ['id', 'name']
-        }
       ]
     });
     if (!stockEntry) {
