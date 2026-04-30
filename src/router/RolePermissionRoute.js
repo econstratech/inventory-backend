@@ -22,7 +22,6 @@ router.post('/update-role/:id',authToken, UpdateRole);
 router.delete('/delete-role/:id',authToken, DeleteRole);
 
 router.post('/create-permission', authToken, createPermission);
-router.put('/update-permission/:id', authToken, updatePermission);
 router.delete('/delete-permission/:id', authToken, deletePermission);
 router.get('/get-all-permissions', authToken, GetAllPermissions);
 router.get('/module-wise-permissions', authToken, ModuleWisePermissions);

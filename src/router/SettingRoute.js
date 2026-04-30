@@ -113,6 +113,7 @@ router.post('/permission/create', authToken, permissionCreate);
 router.get('/permission/all', authToken, permissionAll);
 router.delete("/permission/delete/:id", authToken, permissionDelete);
 router.put("/permission/update/:id", authToken, updatePermission);
+
 router.post("/pos/addgateway", authToken, addGateway);
 router.get("/pos/allgateways", authToken, getAllGateway);
 router.delete("/pos/deletegateway/:id", authToken, deleteGateway);

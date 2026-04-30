@@ -13,7 +13,8 @@ const Warehouse = require("../model/Warehouse")
 const Permission = require("../model/Permission")
 const Module = require("../model/Module")
 const PaymentGateway = require("../model/PaymentGateway")
-const CompanyManagment = require("../model/Company")
+const CompanyManagment = require("../model/Company");
+const { RolePermission } = require("../model");
 
 exports.AllDepartment = async (req, res) => {
     try {
@@ -876,11 +877,17 @@ exports.permissionCreate = async (req, res) => {
   exports.permissionDelete = async (req, res) => {
     try {
       const { id } = req.params;
-      const permission = await Permission.findByPk(id);
+      const permission = await Permission.findOne({
+        attributes: ['id'],
+        where: { id },
+        raw: true,
+      });
+
       if (!permission) {
         return res.status(404).json({ message: "Permission not found" });
       }
-      await permission.destroy(); // performs soft delete if `paranoid: true` is enabled
+      await RolePermission.destroy({ where: { permission_id: permission.id }});
+      await Permission.destroy({ where: { id: permission.id }}); // performs soft delete if `paranoid: true` is enabled
       res.status(200).json({ message: "Permission deleted" });
     } catch (error) {
       console.error("Error deleting permission:", error);
@@ -894,7 +901,11 @@ exports.updatePermission = async (req, res) => {
     const { name, module_id } = req.body;
 
     // Check if the permission exists
-    const permission = await Permission.findByPk(id);
+    const permission = await Permission.findOne({
+        attributes: ['id'],
+        where: { id },
+        raw: true,
+    });
 
     if (!permission) {
       return res.status(404).json({ message: 'Permission not found' });
@@ -907,17 +918,18 @@ exports.updatePermission = async (req, res) => {
     }
 
     // Update permission fields
-    permission.name = name;
-    permission.module = module_id;
+    await Permission.update({
+        name: name.trim(),
+        module_id: Number(module_id)
+    }, {
+        where: { id }
+    });
 
-    // Save the updated permission
-    await permission.save();
-
-    res.status(200).json({ message: 'Permission updated successfully', permission });
+    return res.status(200).json({ message: 'Permission updated successfully', permission });
   } catch (error) {
     // Log the error with more detail
-    console.error('Error updating permission:', error);
-    res.status(500).json({ message: 'Failed to update permission', error: error.message });
+    console.log('Error updating permission:', error);
+    return res.status(500).json({ message: 'Failed to update permission', error: error.message });
   }
 };
 exports.UpdateWhatsappSetting = async (req, res) => {

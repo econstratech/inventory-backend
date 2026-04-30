@@ -289,23 +289,6 @@ exports.createPermission = async (req, res) => {
     }
 };
 
-exports.updatePermission = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name } = req.body;
-        const permission = await Permission.findByPk(id);
-        if (!permission) {
-            return res.status(404).json({ status: false, message: "Permission not found" });
-        }
-        permission.name = name;
-        await permission.save();
-        res.status(200).json({ status: true, message: "Permission updated successfully", data: permission });
-    } catch (err) {
-        console.error("Error updating permission:", err);
-        res.status(500).json({ status: false, message: "Internal Server Error", error: err.message });
-    }
-};
-
 exports.deletePermission = async (req, res) => {
     try {
         const { id } = req.params;
