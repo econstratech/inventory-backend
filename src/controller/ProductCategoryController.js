@@ -74,18 +74,22 @@ exports.CreateProductCategory = async (req, res) => {
         // Check if the category already exists
         const existingCategory = await ProductCategory.findOne({
           attributes: ['id'],
-          where: { title: req.body.title, company_id: req.user.company_id },
+          where: { 
+            title: req.body.title, 
+            company_id: req.user.company_id,
+            status: { [Op.ne]: 2 } // Exclude deleted categories
+          },
           raw: true,
         });
         if (existingCategory) {
-            return res.status(400).json({ status: false, message: "Product category with this name already exists" });
+          return res.status(400).json({ status: false, message: "Product category with this name already exists" });
         }
         // Create the category
         const productCategory = await ProductCategory.create({
-            title: req.body.title.trim(),
-            user_id: req.user.id,
-            company_id: req.user.company_id,
-        })
+          title: req.body.title.trim(),
+          user_id: req.user.id,
+          company_id: req.user.company_id,
+        });
         return res.status(200).json({ status: true, message: "Success", data: productCategory  });
     } catch (err) {
       // Log the error and return error response

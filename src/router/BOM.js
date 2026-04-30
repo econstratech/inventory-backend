@@ -1,9 +1,9 @@
 const express = require("express");
-const { 
-    AddBOM, 
-    UpdateBOM, 
-    GetAllBOM, 
-    DeleteBOM, 
+const {
+    AddBOM,
+    UpdateBOM,
+    GetAllBOM,
+    DeleteBOM,
     GetBOMReport,
     BulkUploadBOM,
     getInventoryNeeded

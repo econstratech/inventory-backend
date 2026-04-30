@@ -2069,6 +2069,100 @@
 
 /**
  * @swagger
+ * /api/production/work-order/material-mapping/bulk-upload:
+ *   post:
+ *     summary: Bulk upload work-order material mappings from CSV
+ *     description: |
+ *       Upload a CSV file linking finished-good products to their raw materials by **product name**.
+ *
+ *       **CSV headers (case-sensitive):**
+ *       - `FG Product` (required) — finished-good product name. Must exist in the company with `status = 1`.
+ *       - `FG Variant` (optional) — UOM label that resolves to one of the FG product's variants. Only used for variant-based companies.
+ *       - `RM Product` (required) — raw material product name. Must exist in the company with `status = 1`.
+ *
+ *       **Behavior:**
+ *       - Rows missing `FG Product` or `RM Product` are skipped.
+ *       - Rows whose products/variants cannot be resolved are skipped and reported in the `errors` array.
+ *       - Duplicates within the upload itself, and triples that already exist in `work_order_material_mapping` for the company, are skipped (also reported).
+ *       - The transaction only rolls back if **no** rows can be inserted.
+ *       - The uploaded CSV file is deleted after processing (success or failure).
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: CSV file with headers `FG Product`, `FG Variant` (optional), `RM Product`
+ *     responses:
+ *       201:
+ *         description: Material mappings uploaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "3 material mappings uploaded successfully"
+ *                 created:
+ *                   type: integer
+ *                   example: 3
+ *                 errors:
+ *                   type: array
+ *                   description: Present only when some rows were skipped
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       row:
+ *                         type: object
+ *                         description: Original CSV row contents
+ *                       reason:
+ *                         type: string
+ *                         example: "FG Product not found: Steel Rod 12mm"
+ *       400:
+ *         description: No file uploaded or non-CSV file
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Only CSV files allowed."
+ *       500:
+ *         description: Server error, no valid rows, or all rows are duplicates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error uploading material mapping"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/material-mapping/list:
  *   get:
  *     summary: List work-order material mappings (paginated)

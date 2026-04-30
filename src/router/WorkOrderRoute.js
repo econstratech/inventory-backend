@@ -21,8 +21,10 @@ const {
     GetMaterialMappingById,
     UpdateMaterialMapping,
     DeleteMaterialMapping,
+    BulkUploadMaterialMapping,
 } = require("../controller/WorkOrderController");
 const { authToken } = require("../utils/Middleware");
+const { upload } = require("../utils/handlersbluk");
 
 const router = express.Router();
 
@@ -46,6 +48,7 @@ router.post('/complete-production', authToken, CompleteProduction);
 
 // Work order material mapping (FG ↔ RM mapping)
 router.post('/material-mapping/create', authToken, CreateMaterialMapping);
+router.post('/material-mapping/bulk-upload', authToken, upload.single('file'), BulkUploadMaterialMapping);
 router.get('/material-mapping/list', authToken, GetAllMaterialMappings);
 router.get('/material-mapping/:id', authToken, GetMaterialMappingById);
 router.put('/material-mapping/update/:id', authToken, UpdateMaterialMapping);
