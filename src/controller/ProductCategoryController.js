@@ -17,10 +17,7 @@ exports.UploadCategory = async (req, res) => {
       }
       const filePath = path.join(uploadDir, req.file.filename);
 
-      console.log(`File path: ${filePath}`); // Log the file path
-
       const ext = path.extname(req.file.filename).toLowerCase();
-      console.log(`File extension: ${ext}`); // Log the file extension
 
       const categories = [];
 
@@ -191,45 +188,34 @@ exports.GetAllProductCategories = async (req, res) => {
   }
 }
 
-exports.GetAllProductscatupdate = async (req, res) => {
-  
-  try {
-    const catid = req.params.id;
-    
-    const getAllProductdata = await ProductCategory.findOne({ where: { id: catid } });
-    //return res.send(getAllProductdata);
-    if (!getAllProductdata) {
-      return res.status(404).json({ message: "Product category not found" });
-    }
 
-    return res.status(200).json({ message: "success", data: getAllProductdata });
-  } catch (err) {
-    console.error('Error fetching product category:', err);
+exports.DeleteProductscat = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    
+    if (!productId || isNaN(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    const productCategory = await ProductCategory.findOne({
+      attributes: ['id'],
+      where: { id: productId, status: { [Op.in]: [0, 1]} },
+      raw: true,
+    });
+    if (!productCategory) { 
+      return res.status(404).json({
+        status: false,
+        message: "Category not found"
+      })
+    }
+    // Update only the status field to 1
+    await ProductCategory.update(
+      { status: '2' },
+      { where: { id: productId } }
+    );
+      
+    return res.json({ message: "Item removed" });
+  } catch (error) {
+    console.error('Error deleting product:', error);
     return res.status(500).json({ message: 'Server error' });
   }
-}
-
-  exports.DeleteProductscat = async (req, res) => {
-    try {
-      const productId = req.params.id;
-      
-      if (!productId || isNaN(productId)) {
-        return res.status(400).json({ message: 'Invalid product ID' });
-      }
-      const product = await ProductCategory.findOne({ where: { id: productId } });
-      if (product) {
-        // Update only the status field to 1
-        await ProductCategory.update(
-            { status: '2' },
-            { where: { id: productId } }
-          );
-          
-        res.json({ message: "Item removed" });
-      } else {
-        res.status(404).json({ message: "Item not found" });
-      }
-    } catch (error) {
-      console.error('Error deleting product:', error);
-      res.status(500).json({ message: 'Server error' });
-    }
-  };
+};
