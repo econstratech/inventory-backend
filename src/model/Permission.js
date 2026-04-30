@@ -2,7 +2,7 @@ const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
 
 
-const Permission = sequelize.define("Permission", {
+const Permission = sequelize.define("permissions_data", {
    id: {
     type: DataTypes.BIGINT,
     autoIncrement: true,
