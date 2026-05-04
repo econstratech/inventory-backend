@@ -27,6 +27,11 @@ const ProductVariant = sequelize.define('product_variants', {
         unsigned: true,
         notNull: true,
     },
+    barcode_number: {
+        type: DataTypes.STRING,
+        length: 80,
+        notNull: false,
+    },
     weight_per_unit: {
         type: DataTypes.INTEGER,
         notNull: true,

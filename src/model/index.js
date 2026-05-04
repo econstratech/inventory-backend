@@ -55,6 +55,7 @@ const ProductionPlanning = require('./ProductionPlanning');
 const ProductionActuals = require('./ProductionActuals');
 const WorkOrderMaterialMapping = require('./WorkOrderMaterialMapping');
 const WorkOrderDispatchBatch = require('./WorkOrderDispatchBatch');
+const BarcodeSettings = require('./BarcodeSettings');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -485,5 +486,6 @@ module.exports = {
     ProductionPlanning,
     ProductionActuals,
     WorkOrderMaterialMapping,
-    WorkOrderDispatchBatch
+    WorkOrderDispatchBatch,
+    BarcodeSettings
 };

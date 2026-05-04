@@ -1,7 +1,10 @@
+const crypto = require("crypto");
+const ProductVariant = require("../model/ProductVariant");
+
 /**
  * Remove all special characters from input string except whitespaces
- * @param {*} str 
- * @returns {str} 
+ * @param {*} str
+ * @returns {str}
  */
 const removeSpecialChars = (str) => {
     return str.replace(/[^a-zA-Z0-9 ]/g, '');
@@ -92,10 +95,57 @@ const generateUniqueReferenceNumber = (prefix, numberLength = 6) => {
     return `${prefix}-${year}-${referenceNumber}`;
 }
 
+const PRODUCT_VARIANT_BARCODE_LENGTH = 12;
+const PRODUCT_VARIANT_BARCODE_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS = 10;
+
+const buildRandomBarcode = () => {
+    let code = '';
+    for (let i = 0; i < PRODUCT_VARIANT_BARCODE_LENGTH; i++) {
+        code += PRODUCT_VARIANT_BARCODE_CHARS[crypto.randomInt(0, PRODUCT_VARIANT_BARCODE_CHARS.length)];
+    }
+    return code;
+};
+
+/**
+ * Generate a unique 12-character uppercase alphanumeric barcode for a ProductVariant.
+ *
+ * Uniqueness is enforced against `product_variants.barcode_number` (including
+ * soft-deleted rows). For bulk creation, pass the same `reserved` Set across
+ * iterations so codes allocated earlier in the batch — but not yet flushed to
+ * the DB — are also avoided. The returned code is added to `reserved` automatically.
+ *
+ * @param {Object} [options]
+ * @param {import('sequelize').Transaction} [options.transaction] - Sequelize transaction to read within
+ * @param {Set<string>} [options.reserved] - Codes already allocated in the current batch
+ * @returns {Promise<string>} 12-character uppercase alphanumeric barcode
+ * @throws {Error} If a unique code cannot be generated within the attempt limit
+ */
+const generateUniqueProductVariantBarcode = async ({ transaction, reserved } = {}) => {
+    for (let attempt = 0; attempt < PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS; attempt++) {
+        const code = buildRandomBarcode();
+        if (reserved && reserved.has(code)) continue;
+
+        const collision = await ProductVariant.findOne({
+            attributes: ['id'],
+            where: { barcode_number: code },
+            paranoid: false,
+            raw: true,
+            transaction,
+        });
+        if (collision) continue;
+
+        if (reserved) reserved.add(code);
+        return code;
+    }
+    throw new Error(`Failed to generate a unique product variant barcode after ${PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS} attempts`);
+};
+
 module.exports = {
     removeSpecialChars,
     paginate,
     formatWeightNumber,
     formatTotalWeight,
     generateUniqueReferenceNumber,
+    generateUniqueProductVariantBarcode,
 }
