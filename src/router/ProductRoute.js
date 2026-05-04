@@ -42,7 +42,9 @@ const {
     UpdateProductVariants,
     GetProductVariants,
     RestoreProduct,
-    BulkExportProducts
+    BulkExportProducts,
+    BackfillProductVariantBarcodes,
+    GenerateVariantBarcodePdf
 } = require("../controller/ProductController");
 const { authToken } = require("../utils/Middleware");
 const { upload } = require("../utils/ImageUpload");
@@ -64,6 +66,8 @@ router.delete("/delete-multiple-restore",authToken,GetAllDeletedProductsRestore)
 router.delete("/delete-multiple", authToken, DeleteMultipleProducts);
 router.post("/update/:id",authToken, upload.single('file'), UpdateProduct);
 router.post("/update-variants/:id", authToken, UpdateProductVariants);
+router.post("/variants/backfill-barcodes", authToken, BackfillProductVariantBarcodes);
+router.post("/variants/barcode-pdf", authToken, GenerateVariantBarcodePdf);
 router.get("/variants/:id", authToken, GetProductVariants);
 router.get("/details/:id",authToken, GetProductDetails);
 router.delete('/:id', authToken, DeleteProduct);

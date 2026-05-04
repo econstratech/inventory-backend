@@ -29,9 +29,11 @@ const {
   MasterUOM,
   MasterBrand,
   SalesProductReceived,
+  BarcodeSettings,
 } = require("../model");
 // const { CompressImage } = require("../utils/ImageUpload");
 const CommonHelper = require('../helpers/commonHelper');
+const puppeteer = require('puppeteer');
 
 
 // const { error } = require("console");
@@ -163,6 +165,7 @@ const productVatientInsert = async(params) => {
         transaction,
       });
       if (!productVariant) {
+        const barcode_number = await CommonHelper.generateUniqueProductVariantBarcode({ transaction });
         productVariant = await ProductVariant.create({
           product_id: isProductExist.id,
           uom_id: uomId,
@@ -173,6 +176,7 @@ const productVatientInsert = async(params) => {
           status: 1,
           company_id: user.company_id,
           user_id: user.id,
+          barcode_number,
         }, { transaction });
       } else {
         // Update weight per unit
@@ -576,7 +580,12 @@ exports.AddProduct = async (req, res) => {
     let hasMasterPack = false;
     const productVariants = [];
     if (isVariantBased) {
-      product_variants.forEach((eachVariant) => {
+      const reservedBarcodes = new Set();
+      for (const eachVariant of product_variants) {
+        const barcode_number = await CommonHelper.generateUniqueProductVariantBarcode({
+          transaction,
+          reserved: reservedBarcodes,
+        });
         productVariants.push({
           company_id: companyId,
           user_id: req.user.id,
@@ -586,12 +595,13 @@ exports.AddProduct = async (req, res) => {
           pack_uom_id: eachVariant.pack_uom_id || null,
           quantity_per_pack: eachVariant.quantity_per_pack || null,
           weight_per_pack: eachVariant.weight_per_pack || null,
+          barcode_number,
           status: 1,
         });
         if (eachVariant.pack_uom_id) {
           hasMasterPack = true;
         }
-      });
+      }
       await ProductVariant.bulkCreate(productVariants, { transaction });
     }
 
@@ -854,7 +864,7 @@ exports.GetAllProducts = async (req, res) => {
         },
         {
           association: "productVariants",
-          attributes: ["id", "weight_per_unit", "price_per_unit", "uom_id", "weight_per_pack", "quantity_per_pack", "pack_uom_id"],
+          attributes: ["id", "barcode_number", "weight_per_unit", "price_per_unit", "uom_id", "weight_per_pack", "quantity_per_pack", "pack_uom_id"],
           include: [
             {
               association: "masterUOM",
@@ -985,6 +995,7 @@ exports.GetAllDeletedProductsRestore = async (req, res) => {
 exports.GetProductDetails = async (req, res) => {
   try {
     const productId = req.params.id;
+    const companyId = req.user.company_id;
 
     const product = await Product.findOne({
       attributes: [
@@ -1012,7 +1023,7 @@ exports.GetProductDetails = async (req, res) => {
         },
         {
           association: 'productVariants',
-          attributes: ['id', 'weight_per_unit', 'price_per_unit', 'uom_id', 'weight_per_pack', 'quantity_per_pack', 'pack_uom_id'],
+          attributes: ['id', 'barcode_number', 'weight_per_unit', 'price_per_unit', 'uom_id', 'weight_per_pack', 'quantity_per_pack', 'pack_uom_id'],
           // include: [
           //   {
           //     association: 'masterUOM',
@@ -1037,7 +1048,14 @@ exports.GetProductDetails = async (req, res) => {
         // { model: TrackProductStock, as: "TrackProductStock" },
       ],
     });
-    return res.status(200).json({ message: true, data: product });
+
+    const barcodeSettings = await BarcodeSettings.findOne({
+      attributes: ['id', 'company_name', 'has_barcode_number', 'has_product_code'],
+      where: { company_id: companyId },
+      raw: true,
+    });
+    
+    return res.status(200).json({ message: true, data: { product, barcodeSettings } });
   } catch (err) {
     console.log("Error in GetProductDetails:", err);
     return res.status(400).json(err);
@@ -4224,11 +4242,13 @@ const updateEachProductVariant = async (productId, variant, user, transaction) =
       }, { where: { id }, transaction });
     } else {
       // Create new variant
+      const barcode_number = await CommonHelper.generateUniqueProductVariantBarcode({ transaction });
       await ProductVariant.create({
         product_id: productId,
         company_id: companyId,
         user_id: userId,
         status: 1,
+        barcode_number,
         ...variantPayload
       }, { transaction });
     }
@@ -4236,6 +4256,251 @@ const updateEachProductVariant = async (productId, variant, user, transaction) =
   } catch (error) {
     console.error("Update product variants error:", error);
     throw error;
+  }
+};
+
+const BACKFILL_VARIANT_BARCODE_MAX_BATCH = 30;
+
+/**
+ * Backfill `barcode_number` for ProductVariant rows that are missing one,
+ * scoped to the authenticated user's company. Processes at most
+ * BACKFILL_VARIANT_BARCODE_MAX_BATCH rows per call so the operation can be
+ * triggered repeatedly until `remaining` reaches 0.
+ *
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.BackfillProductVariantBarcodes = async (req, res) => {
+  let transaction;
+  try {
+    const companyId = req.user.company_id;
+    const requestedLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, BACKFILL_VARIANT_BARCODE_MAX_BATCH)
+      : BACKFILL_VARIANT_BARCODE_MAX_BATCH;
+
+    const missingFilter = {
+      company_id: companyId,
+      [Op.or]: [
+        { barcode_number: { [Op.is]: null } },
+        { barcode_number: '' },
+      ],
+    };
+
+    transaction = await sequelize.transaction();
+
+    const variants = await ProductVariant.findAll({
+      attributes: ['id'],
+      where: missingFilter,
+      order: [['id', 'ASC']],
+      limit,
+      transaction,
+    });
+
+    const reservedBarcodes = new Set();
+    for (const variant of variants) {
+      const barcode_number = await CommonHelper.generateUniqueProductVariantBarcode({
+        transaction,
+        reserved: reservedBarcodes,
+      });
+      await ProductVariant.update(
+        { barcode_number },
+        { where: { id: variant.id }, transaction }
+      );
+    }
+
+    await transaction.commit();
+
+    const remaining = await ProductVariant.count({ where: missingFilter });
+
+    return res.status(200).json({
+      status: true,
+      message: `Generated barcodes for ${variants.length} variant(s).`,
+      processed: variants.length,
+      remaining,
+    });
+  } catch (error) {
+    if (transaction) await transaction.rollback();
+    console.error('Backfill variant barcodes error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Failed to backfill variant barcodes',
+      error: error.message,
+    });
+  }
+};
+
+const BARCODE_PDF_MAX_VARIANTS = 500;
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const buildBarcodePdfHtml = (cells, settings) => {
+  const showNumber = settings?.has_barcode_number === 1 ? 'true' : 'false';
+  const cellsHtml = cells.map((cell, index) => `
+    <div class="cell">
+      ${cell.companyName ? `<div class="company">${escapeHtml(cell.companyName)}</div>` : ''}
+      ${cell.productCode ? `<div class="sku">${escapeHtml(cell.productCode)}</div>` : ''}
+      <svg id="bc-${index}" data-value="${escapeHtml(cell.barcodeNumber)}"></svg>
+    </div>
+  `).join('');
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Product Barcodes</title>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<style>
+  @page { size: A4; margin: 10mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm 6mm; }
+  .cell {
+    text-align: center;
+    padding: 6mm 4mm;
+    border: 1px dashed #ccc;
+    page-break-inside: avoid;
+  }
+  .company { font-weight: 700; font-size: 11pt; margin-bottom: 2mm; }
+  .sku { font-weight: 700; font-size: 10pt; margin-bottom: 2mm; }
+  svg { width: 100%; height: 60px; }
+</style>
+</head>
+<body>
+<div class="grid">
+  ${cellsHtml}
+</div>
+<script>
+  (function () {
+    const showNumber = ${showNumber};
+    document.querySelectorAll('svg[data-value]').forEach((svg) => {
+      const value = svg.getAttribute('data-value');
+      if (!value) return;
+      try {
+        JsBarcode(svg, value, {
+          format: 'CODE128',
+          displayValue: showNumber,
+          width: 1.5,
+          height: 60,
+          fontSize: 14,
+          margin: 0,
+        });
+      } catch (e) {
+        svg.outerHTML = '<div style="color:#c00;font-size:9pt">Invalid: ' + value + '</div>';
+      }
+    });
+    window.__barcodesReady = true;
+  })();
+</script>
+</body>
+</html>`;
+};
+
+/**
+ * Generate a printable PDF of ProductVariant barcodes for the authenticated
+ * user's company. If `variant_ids` is provided in the body, only those variants
+ * are included; otherwise every variant in the company that has a
+ * `barcode_number` is included. Hard cap of BARCODE_PDF_MAX_VARIANTS per call.
+ *
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+exports.GenerateVariantBarcodePdf = async (req, res) => {
+  let browser;
+  try {
+    const companyId = req.user.company_id;
+    const requestedIds = Array.isArray(req.body?.variant_ids) ? req.body.variant_ids : [];
+    const variantIds = requestedIds
+      .map((id) => parseInt(id, 10))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    const where = {
+      company_id: companyId,
+      barcode_number: { [Op.and]: [{ [Op.not]: null }, { [Op.ne]: '' }] },
+    };
+    if (variantIds.length > 0) {
+      where.id = { [Op.in]: variantIds };
+    }
+
+    const totalCount = await ProductVariant.count({ where });
+    if (totalCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: variantIds.length > 0
+          ? 'None of the requested variants have a barcode'
+          : 'No variants with barcodes found for this company',
+      });
+    }
+    if (totalCount > BARCODE_PDF_MAX_VARIANTS) {
+      return res.status(400).json({
+        status: false,
+        message: `Too many variants (${totalCount}). Maximum allowed per request is ${BARCODE_PDF_MAX_VARIANTS}. Pass a smaller variant_ids array.`,
+      });
+    }
+
+    const variants = await ProductVariant.findAll({
+      attributes: ['id', 'barcode_number'],
+      where,
+      include: [{
+        association: 'product',
+        attributes: ['id', 'product_code'],
+        required: false,
+      }],
+      order: [['id', 'ASC']],
+    });
+
+    const barcodeSettings = await BarcodeSettings.findOne({
+      attributes: ['company_name', 'has_barcode_number', 'has_product_code'],
+      where: { company_id: companyId },
+      raw: true,
+    });
+
+    const cells = variants.map((v) => ({
+      barcodeNumber: v.barcode_number,
+      companyName: barcodeSettings?.company_name || '',
+      productCode: barcodeSettings?.has_product_code === 1 ? (v.product?.product_code || '') : '',
+    }));
+
+    const html = buildBarcodePdfHtml(cells, barcodeSettings);
+
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.waitForFunction('window.__barcodesReady === true', { timeout: 15000 });
+
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+    });
+
+    await browser.close();
+    browser = null;
+
+    const filename = `product-barcodes-${Date.now()}.pdf`;
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': pdfBuffer.length,
+    });
+    return res.send(pdfBuffer);
+  } catch (error) {
+    if (browser) {
+      try { await browser.close(); } catch (_) { /* ignore */ }
+    }
+    console.error('Generate variant barcode PDF error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Failed to generate barcode PDF',
+      error: error.message,
+    });
   }
 };
 
@@ -4303,6 +4568,7 @@ exports.GetProductVariants = async (req, res) => {
         'id',
         'uom_id',
         'pack_uom_id',
+        'barcode_number',
         'weight_per_unit',
         'price_per_unit',
         'weight_per_pack',
@@ -4321,20 +4587,26 @@ exports.GetProductVariants = async (req, res) => {
       order: [['id', 'ASC']]
     });
 
+    // const barcodeSettings = await BarcodeSettings.findOne({
+    //   attributes: ['id', 'company_name', 'has_barcode_number', 'has_product_code'],
+    //   where: { company_id: companyId },
+    //   raw: true,
+    // });
+
     return res.status(200).json({
       status: true,
       message: "Product variants fetched successfully",
       data: {
         product,
-        variants: variants
+        variants: variants,
+        // barcodeSettings: barcodeSettings
       }
     });
   } catch (error) {
-    console.error("Get product variants error:", error);
+    console.log("Get product variants error:", error);
     return res.status(500).json({
       status: false,
-      message: "Error fetching product variants",
-      error: error.message
+      message: error.message || "Error fetching product variants",
     });
   }
 };

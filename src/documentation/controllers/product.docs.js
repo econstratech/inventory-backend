@@ -490,6 +490,159 @@
 
 /**
  * @swagger
+ * /api/product/variants/backfill-barcodes:
+ *   post:
+ *     summary: Backfill barcodes for product variants missing one
+ *     description: |
+ *       Manually-triggered maintenance endpoint. Finds ProductVariant rows in the
+ *       authenticated user's company where `barcode_number` is NULL or empty,
+ *       generates a unique 12-character uppercase alphanumeric barcode for each,
+ *       and updates the rows in a single transaction. Processes at most 30 rows
+ *       per call (hard cap) so it can be invoked repeatedly until `remaining`
+ *       reaches 0. On any failure the entire batch is rolled back.
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 30
+ *           default: 30
+ *         description: Max number of variants to backfill in this call. Values above 30 are clamped to 30.
+ *         example: 30
+ *     responses:
+ *       200:
+ *         description: Backfill batch processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Generated barcodes for 30 variant(s)."
+ *                 processed:
+ *                   type: integer
+ *                   description: Number of variants updated in this call
+ *                   example: 30
+ *                 remaining:
+ *                   type: integer
+ *                   description: Number of variants still missing a barcode after this call. Re-invoke until this is 0.
+ *                   example: 142
+ *       500:
+ *         description: Backfill failed; transaction was rolled back
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to backfill variant barcodes"
+ *                 error:
+ *                   type: string
+ *                   example: "Failed to generate a unique product variant barcode after 10 attempts"
+ */
+
+/**
+ * @swagger
+ * /api/product/variants/barcode-pdf:
+ *   post:
+ *     summary: Download a printable PDF of product variant barcodes
+ *     description: |
+ *       Generates a PDF containing CODE128 barcodes for product variants in the
+ *       authenticated user's company. Each cell renders the configured company
+ *       name, optionally the product code (when `barcode_settings.has_product_code = 1`),
+ *       the barcode itself, and the barcode number below the bars (when
+ *       `barcode_settings.has_barcode_number = 1`).
+ *
+ *       If `variant_ids` is provided in the body, only those variants are
+ *       included; otherwise every variant in the company that has a non-empty
+ *       `barcode_number` is included. Variants without a barcode are skipped
+ *       silently — call `/api/product/variants/backfill-barcodes` first if you
+ *       need them populated.
+ *
+ *       Hard cap of 500 variants per call. If the resolved set exceeds 500 the
+ *       request is rejected with 400 — split the `variant_ids` list and call again.
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               variant_ids:
+ *                 type: array
+ *                 description: Optional. Specific ProductVariant IDs to include. Omit or pass an empty array to include all variants in the company.
+ *                 items:
+ *                   type: integer
+ *                 example: [12, 47, 88]
+ *     responses:
+ *       200:
+ *         description: PDF generated successfully. Response body is the binary PDF; `Content-Disposition` is set to attachment.
+ *         content:
+ *           application/pdf:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       400:
+ *         description: Requested variant set exceeds the per-call cap
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Too many variants (612). Maximum allowed per request is 500. Pass a smaller variant_ids array."
+ *       404:
+ *         description: No variants with a barcode were found for the requested filter
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "No variants with barcodes found for this company"
+ *       500:
+ *         description: PDF generation failed (puppeteer launch error, barcode encoding error, etc.)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to generate barcode PDF"
+ *                 error:
+ *                   type: string
+ */
+
+/**
+ * @swagger
  * /api/product/variants/{id}:
  *   get:
  *     summary: Get all variants of a product

@@ -412,3 +412,115 @@
  *       406:
  *         description: Store with the same name already exists
  */
+
+/**
+ * @swagger
+ * /api/getbarcode:
+ *   get:
+ *     summary: Get barcode settings for the company
+ *     description: Returns the barcode settings record for the authenticated user's company. `data` is `null` if no barcode settings have been configured yet.
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Barcode settings fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   nullable: true
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     company_name:
+ *                       type: string
+ *                       example: "Acme Corp"
+ *                     barcode_number:
+ *                       type: string
+ *                       example: "1234567890123"
+ *                     item_id:
+ *                       type: integer
+ *                       example: 42
+ *                     comapny_name_display:
+ *                       type: integer
+ *                       description: Flag controlling whether the company name is rendered on the printed barcode (1 = display, 0 = hide)
+ *                       example: 1
+ *                     company_id:
+ *                       type: integer
+ *                       example: 7
+ *                     created_at:
+ *                       type: string
+ *                       format: date-time
+ *                     updated_at:
+ *                       type: string
+ *                       format: date-time
+ *       400:
+ *         description: Error fetching barcode settings
+ */
+
+/**
+ * @swagger
+ * /api/updatebarcode:
+ *   post:
+ *     summary: Create or update barcode settings for the company
+ *     description: Upserts the barcode settings record for the authenticated user's company. Returns 201 if a new record was created, 200 if an existing record was updated.
+ *     tags: [Settings]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               company_name:
+ *                 type: string
+ *                 description: Company name to render on the barcode. Trimmed; empty/whitespace-only values are stored as null.
+ *                 example: "Acme Corp"
+ *               barcode_number:
+ *                 type: boolean
+ *                 description: Stored as `has_barcode_number` — flag controlling whether the barcode number is included on the printed label.
+ *                 example: true
+ *               item_id:
+ *                 type: boolean
+ *                 description: Stored as `has_product_code` — flag controlling whether the product/item code is included on the printed label.
+ *                 example: true
+ *     responses:
+ *       200:
+ *         description: Existing barcode settings updated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Setting has been updated successfully"
+ *       201:
+ *         description: New barcode settings record created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Setting has been created successfully"
+ *       400:
+ *         description: Error creating or updating barcode settings
+ */

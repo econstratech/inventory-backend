@@ -1,8 +1,6 @@
 const { Op } = require("sequelize");
 
 const sequelize = require("../database/db-connection")
-const BarcodeModel = require("../model/BarcodeModel")
-const CompanyModel = require("../model/CompanyModel")
 const DefaultApproval = require("../model/DefaultApproval")
 const DepartmentsModel = require("../model/DepartmentModel")
 const MasteruomModel = require("../model/MasteruomModel")
@@ -14,7 +12,12 @@ const Permission = require("../model/Permission")
 const Module = require("../model/Module")
 const PaymentGateway = require("../model/PaymentGateway")
 const CompanyManagment = require("../model/Company");
-const { RolePermission } = require("../model");
+const { 
+    RolePermission, 
+    BarcodeSettings, 
+    GeneralSettings,
+    Company
+} = require("../model");
 
 exports.AllDepartment = async (req, res) => {
     try {
@@ -230,7 +233,7 @@ exports.EditNotification = async (req, res) => {
 //Whatsapp Setting
 exports.GetWhatsappSetting = async (req, res) => {
     try {
-        const whatsappSetting = await CompanyModel.GeneralSettings.findOne({
+        const whatsappSetting = await GeneralSettings.findOne({
             where: {
                 company_id: req.user.company_id,
             },
@@ -258,13 +261,13 @@ exports.GeneralSettings = async (req, res) => {
       } = req.body;
   
       // Check if the record exists, if exists then update the record else create a new record
-      const existingRecord = await CompanyModel.GeneralSettings.findOne({
+      const existingRecord = await GeneralSettings.findOne({
         attributes: ['id'],
         where: { company_id: companyId },
         raw: true,
       });
       if (existingRecord) {
-        await CompanyModel.GeneralSettings.update(
+        await GeneralSettings.update(
           {
             currency_code: currency.code,
             currency_name: currency.name,
@@ -287,7 +290,7 @@ exports.GeneralSettings = async (req, res) => {
           .status(200)
           .json({ message: true, data: "Settings updated successfully." });
       } else {
-        await CompanyModel.GeneralSettings.create({
+        await GeneralSettings.create({
           currency_code: currency.code,
           currency_name: currency.name,
           symbol: currency.symbol,
@@ -316,7 +319,7 @@ exports.GeneralSettings = async (req, res) => {
 exports.fetchSettings = async (req, res) => {
     try {
         // Fetch settings from the database
-        const fetchSettings = await CompanyModel.GeneralSettings.findOne({
+        const fetchSettings = await GeneralSettings.findOne({
             attributes: [
                 'currency_code',
                 'currency_name',
@@ -584,8 +587,9 @@ exports.DeleteStore = async (req, res) => {
 // barcode
 exports.GetBarcode = async (req, res) => {
     try {
-        const store = await BarcodeModel.findOne({
-            where: {company_id: req.user.company_id }
+        const store = await BarcodeSettings.findOne({
+            where: { company_id: req.user.company_id },
+            raw: true
         });
         return res.status(200).json({ message: true, data: store });
     } catch (err) {
@@ -595,34 +599,39 @@ exports.GetBarcode = async (req, res) => {
 
 exports.UpdateBarcode = async (req, res) => {    
     try {
-        const existingRecord = await BarcodeModel.findOne({
-            where: { company_id: req.user.company_id }
+        const existingRecord = await BarcodeSettings.findOne({
+            attributes: ['id'],
+            where: { company_id: req.user.company_id },
+            raw: true
         });
+
+        const payload = {
+            company_name: req.body?.company_name?.trim() || null,
+            has_barcode_number: req.body?.has_barcode_number ? 1 : 0,
+            has_product_code: req.body?.has_product_code ? 1 : 0,
+            company_name: req.body.company_name,
+        };
+        let responseMessage = '';
+        let responseStatuscode = 200;
 
         if (existingRecord) {
             // Update the existing record
-            await BarcodeModel.update({
-                company_name: req.body.company_name,
-                barcode_number: req.body.barcode_number,
-                item_id: req.body.item_id,
-                comapny_name_display: req.body.company_name_display,
+            await BarcodeSettings.update({
+                ...payload
             }, {
                 where: { company_id: req.user.company_id }
             });
-
-            return res.status(200).json({ message: "Setting has been updated" });
+            responseMessage = 'Setting has been updated successfully';
         } else {
             // Create a new record
-            await BarcodeModel.create({
-                company_name: req.body.companyName,
-                barcode_number: req.body.barcodeNumber,
-                item_id: req.body.itemId,
-                comapny_name_display: req.body.anotherCompanyName,
+            await BarcodeSettings.create({
+                ...payload,
                 company_id: req.user.company_id
             });
-
-            return res.status(201).json({ message: "Setting has been created" });
+            responseMessage = 'Setting has been created successfully';
+            responseStatuscode = 201;
         }
+        return res.status(responseStatuscode).json({ status: true, message: responseMessage });
     } catch (err) {
         return res.status(400).json(err);
     }
@@ -789,20 +798,20 @@ exports.updateAllIniState = async (req, res) => {
 };
 
 exports.GetCompanyName = async (req, res) => {
-    // try {
+    try {
         const productId = req.params.id;
         
-        const getAllProduct = await CompanyModel.CompanyModel.findOne({
+        const getAllProduct = await Company.findOne({
             where: {
                 company_id: productId,
-            }
-            
-        })
-        return res.status(200).json({ message: true, data: getAllProduct });
+            },
+            raw: true            
+        });
 
-    // } catch (err) {
-    //     return res.status(400).json(err)
-    // }
+        return res.status(200).json({ message: true, data: getAllProduct });
+    } catch (err) {
+        return res.status(400).json(err)
+    }
 };
 // exports.EditNotification = async (req, res) => {
 //     try {
@@ -935,7 +944,7 @@ exports.updatePermission = async (req, res) => {
 exports.UpdateWhatsappSetting = async (req, res) => {
     try {
         const { greenapi_apitoken_instance, gupshup_token, gupshup_phone, greenapi_instance_id, maytapi_api_token, maytapi_phone_id, maytapi_product_id, type, meta_phone_id, meta_token } = req.body;
-        await CompanyModel.GeneralSettings.update({
+        await GeneralSettings.update({
             which_whatsapp: type,
             greenapi_apitoken_instance,
             greenapi_instance_id,
