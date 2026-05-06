@@ -1987,10 +1987,15 @@
  *                 type: integer
  *                 description: New quantity to update
  *                 example: 75
+ *               buffer_size:
+ *                 type: integer
+ *                 description: Buffer (safety stock) size for this stock entry
+ *                 example: 10
  *           example:
  *             product_id: 12
  *             warehouse_id: 1
  *             quantity: 75
+ *             buffer_size: 10
  *     responses:
  *       200:
  *         description: Stock entry updated successfully
