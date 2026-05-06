@@ -3808,7 +3808,7 @@ exports.GetStockEntriesById = async (req, res) => {
 
     // get stock entry by id
     const stockEntry = await ProductStockEntry.findOne({
-      attributes: ['id', 'product_id', 'warehouse_id', 'quantity', 'created_at'],
+      attributes: ['id', 'product_id', 'warehouse_id', 'quantity', 'buffer_size', 'created_at'],
       where: { id, company_id: req.user.company_id },
       include: [
         {
@@ -3990,7 +3990,7 @@ exports.UpdateStockEntry = async (req, res) => {
   const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const { product_id, warehouse_id, quantity, product_variant_id } = req.body;
+    const { product_id, warehouse_id, quantity, buffer_size, product_variant_id } = req.body;
 
     // check if the stock entry exists
     const wherecondition = {
@@ -4029,9 +4029,12 @@ exports.UpdateStockEntry = async (req, res) => {
     }
 
     // calculate the new quantity
-    const finalStockQuantity = parseInt(quantity) + parseInt(productStockEntry.quantity);
+    // const finalStockQuantity = parseInt(quantity) + parseInt(productStockEntry.quantity);
     // update the stock entry
-    await ProductStockEntry.update({ quantity: finalStockQuantity }, { where: { id: productStockEntry.id }, transaction });
+    await ProductStockEntry.update({ 
+      quantity: parseInt(quantity),
+      buffer_size: parseInt(buffer_size),
+    }, { where: { id: productStockEntry.id }, transaction });
 
     // create a new track product stock entry
     await TrackProductStock.create({
