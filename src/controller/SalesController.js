@@ -58,6 +58,8 @@ exports.AddSellQuotation = async (req, res) => {
   try {
     // generate the reference number
     const referenceNumber = await generateUniqueReferenceNumber();
+    const companyId = req.user.company_id;
+    const userId = req.user.id;
 
     // begin the transaction
     transaction = await sequelize.transaction();
@@ -65,8 +67,8 @@ exports.AddSellQuotation = async (req, res) => {
     const sellQuotationData = await Sale.create(
       {
         reference_number: "S" + referenceNumber,
-        customer_id: req.body.customer_id,
-        warehouse_id: req.body.warehouse_id,
+        customer_id: parseInt(req.body.customer_id),
+        warehouse_id: parseInt(req.body.warehouse_id),
         expected_delivery_date: req.body.expected_delivery_date,
         // customer_reference: req.body.customer_reference,
         // expiration: req.body.expiration,
@@ -78,8 +80,8 @@ exports.AddSellQuotation = async (req, res) => {
         untaxed_amount: req.body.untaxed_amount,
         is_parent: req.body.is_parent,
         is_parent_id: req.body.is_parent_id,
-        user_id: req.user.id,
-        company_id: req.user.company_id,
+        user_id: userId,
+        company_id: companyId,
         mailsend_status: req.body.mailsend_status || 0,
         status: req.body.send_to_management ? 3 : req.body.send_to_floor_manager ? 9 : 2
       },
@@ -91,6 +93,7 @@ exports.AddSellQuotation = async (req, res) => {
         // Calculate product total including tax
         const productTotal = product.qty * product.unit_price;
         const taxAmount = (product.tax / 100) * productTotal;
+        const productQuantity = parseInt(product.qty);
         // const totalWithTax = productTotal + taxAmount;
 
         // Create SalesProduct record
@@ -102,18 +105,25 @@ exports.AddSellQuotation = async (req, res) => {
             customer_id: req.body.customer_id,
             warehouse_id: req.body.warehouse_id,
             description: product.description,
-            qty: product.qty,
+            qty: productQuantity,
             unit_price: product.unit_price,
             tax: product.tax,
             taxExcl: product.taxExcl,
             taxIncl: product.taxIncl, // Store total including tax
             vendor_id: req.body.vendor_id,
             taxAmount: taxAmount,
-            user_id: req.user.id,
-            company_id: req.user.company_id,
+            user_id: userId,
+            company_id: companyId,
           },
           { transaction }
         );
+
+        // update the stock entry (increase quantity & decrease sale_order_recieved)
+        if (req.body.send_to_management) {
+          await updateStockEntry(sellQuotationData.id, sellQuotationData.warehouse_id, product.product_id, product.variant_id, productQuantity, 9, userId, transaction);
+        } else if (req.body.send_to_floor_manager) {
+          await updateStockEntry(sellQuotationData.id, sellQuotationData.warehouse_id, product.product_id, product.variant_id, productQuantity, 10, userId, transaction);
+        }
       });
 
       await Promise.all(productPromises);
@@ -163,7 +173,7 @@ exports.AddSellQuotation = async (req, res) => {
     if (transaction) {
       await transaction.rollback();
     }
-    console.error("error in sell quotation creation", error);
+    console.log("error in sell quotation creation", error);
     res.status(500).json({
       status: false,
       message: "An error occurred while creating the sell quotation",
