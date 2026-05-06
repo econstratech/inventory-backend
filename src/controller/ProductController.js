@@ -4032,7 +4032,7 @@ exports.UpdateStockEntry = async (req, res) => {
     // const finalStockQuantity = parseInt(quantity) + parseInt(productStockEntry.quantity);
     // update the stock entry
     await ProductStockEntry.update({ 
-      quantity: parseInt(productStockEntry.quantity),
+      quantity: parseInt(quantity),
       buffer_size: parseInt(buffer_size),
     }, { where: { id: productStockEntry.id }, transaction });
 
