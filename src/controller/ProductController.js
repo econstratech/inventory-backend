@@ -4321,11 +4321,10 @@ exports.BackfillProductVariantBarcodes = async (req, res) => {
     });
   } catch (error) {
     if (transaction) await transaction.rollback();
-    console.error('Backfill variant barcodes error:', error);
+    console.log('Backfill variant barcodes error:', error);
     return res.status(500).json({
       status: false,
-      message: 'Failed to backfill variant barcodes',
-      error: error.message,
+      message: error.message || 'Failed to backfill variant barcodes'
     });
   }
 };

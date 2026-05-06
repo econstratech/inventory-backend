@@ -122,23 +122,27 @@ const buildRandomBarcode = () => {
  * @throws {Error} If a unique code cannot be generated within the attempt limit
  */
 const generateUniqueProductVariantBarcode = async ({ transaction, reserved } = {}) => {
-    for (let attempt = 0; attempt < PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS; attempt++) {
-        const code = buildRandomBarcode();
-        if (reserved && reserved.has(code)) continue;
+    try {
+        for (let attempt = 0; attempt < PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS; attempt++) {
+            const code = buildRandomBarcode();
+            if (reserved && reserved.has(code)) continue;
 
-        const collision = await ProductVariant.findOne({
-            attributes: ['id'],
-            where: { barcode_number: code },
-            paranoid: false,
-            raw: true,
-            transaction,
-        });
-        if (collision) continue;
+            const collision = await ProductVariant.findOne({
+                attributes: ['id'],
+                where: { barcode_number: code },
+                paranoid: false,
+                raw: true,
+                transaction,
+            });
+            if (collision) continue;
 
-        if (reserved) reserved.add(code);
-        return code;
+            if (reserved) reserved.add(code);
+            return code;
+        }
+    } catch (error) {
+        console.log(`Failed to generate a unique product variant barcode after ${PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS} attempts`);
+        throw error;
     }
-    throw new Error(`Failed to generate a unique product variant barcode after ${PRODUCT_VARIANT_BARCODE_MAX_ATTEMPTS} attempts`);
 };
 
 module.exports = {
