@@ -3845,6 +3845,11 @@ exports.salesLedger = async (req, res) => {
   try {
     const { customer_id, startDate, endDate } = req.body;
 
+    // Pagination params
+    const page = Math.max(1, parseInt(req.body.page, 10) || 1);
+    const pageSize = Math.max(1, parseInt(req.body.limit, 10) || 15);
+    const offset = (page - 1) * pageSize;
+
     let conditions = "";
     // Ensure customer_id is a valid number
     if (customer_id && !isNaN(customer_id)) {
@@ -3856,37 +3861,176 @@ exports.salesLedger = async (req, res) => {
       conditions += ` AND DATE(sp.invoice_date) BETWEEN '${startDate}' AND '${endDate}'`;
     }
 
-    const query = `
-      SELECT 
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM sales_product sp
+      LEFT JOIN sale s ON s.id = sp.sales_id
+      WHERE 1=1 ${conditions}
+    `;
+
+    const dataQuery = `
+      SELECT
         c.name AS customer_name,
         s.reference_number,
+        s.created_at,
         sp.qty,
         p.product_name AS product_name,
+        pv.weight_per_unit,
+        vu.label,
         sp.taxIncl,
         sp.invoice_number,
         sp.invoice_date,
         p.id AS product_id,
         sp.production_status,
          sp.production_number,
-        sp.is_dispatched
+        sp.is_dispatched,
+        COALESCE((
+          SELECT SUM(spr.received_quantity)
+          FROM sales_product_received spr
+          WHERE spr.sales_product_id = sp.id
+          AND spr.deleted_at IS NULL
+        ), 0) AS total_received_qty,
+        COALESCE((
+          SELECT SUM(spr.returned_quantity)
+          FROM sales_product_received spr
+          WHERE spr.sales_product_id = sp.id
+          AND spr.deleted_at IS NULL
+        ), 0) AS total_returned_qty
       FROM sales_product sp
-      JOIN sale s ON s.id = sp.sales_id
-      JOIN product p ON p.id = sp.product_id
-      JOIN customer c ON c.id = s.customer_id
+      LEFT JOIN sale s ON s.id = sp.sales_id
+      LEFT JOIN product_variants pv ON pv.id = sp.product_variant_id
+      LEFT JOIN master_uom vu ON vu.id = pv.uom_id
+      LEFT JOIN product p ON p.id = sp.product_id
+      LEFT JOIN customer c ON c.id = s.customer_id
+      WHERE 1=1 ${conditions}
+      ORDER BY sp.invoice_date DESC
+      LIMIT ${pageSize} OFFSET ${offset}
+    `;
+
+    const [[countRow], [rows]] = await Promise.all([
+      sequelize.query(countQuery),
+      sequelize.query(dataQuery),
+    ]);
+    const total = Number(countRow?.[0]?.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return res.status(200).json({
+      status: true,
+      message: "Sales ledger fetched successfully",
+      data: {
+        total,
+        page,
+        pageSize,
+        totalPages,
+        rows,
+      },
+    });
+  } catch (error) {
+    console.log("Ledger fetch error:", error);
+    return res.status(500).json({ status: false, message: "Failed to fetch ledger." });
+  }
+};
+
+exports.exportSalesLedger = async (req, res) => {
+  try {
+    const { customer_id, startDate, endDate } = req.body;
+
+    let conditions = "";
+    if (customer_id && !isNaN(customer_id)) {
+      conditions += ` AND s.customer_id = ${customer_id}`;
+    }
+    if (startDate && endDate) {
+      conditions += ` AND DATE(sp.invoice_date) BETWEEN '${startDate}' AND '${endDate}'`;
+    }
+
+    const dataQuery = `
+      SELECT
+        c.name AS customer_name,
+        s.reference_number,
+        s.created_at,
+        sp.qty,
+        p.product_name AS product_name,
+        pv.weight_per_unit,
+        vu.label,
+        sp.taxIncl,
+        p.id AS product_id,
+        COALESCE((
+          SELECT SUM(spr.received_quantity)
+          FROM sales_product_received spr
+          WHERE spr.sales_product_id = sp.id
+          AND spr.deleted_at IS NULL
+        ), 0) AS total_received_qty,
+        COALESCE((
+          SELECT SUM(spr.returned_quantity)
+          FROM sales_product_received spr
+          WHERE spr.sales_product_id = sp.id
+          AND spr.deleted_at IS NULL
+        ), 0) AS total_returned_qty
+      FROM sales_product sp
+      LEFT JOIN sale s ON s.id = sp.sales_id
+      LEFT JOIN product_variants pv ON pv.id = sp.product_variant_id
+      LEFT JOIN master_uom vu ON vu.id = pv.uom_id
+      LEFT JOIN product p ON p.id = sp.product_id
+      LEFT JOIN customer c ON c.id = s.customer_id
       WHERE 1=1 ${conditions}
       ORDER BY sp.invoice_date DESC
     `;
 
+    const [rows] = await sequelize.query(dataQuery);
 
-    const [results] = await sequelize.query(query);
-    res.status(200).json(results);
+    const csvEscape = (val) => {
+      if (val === null || val === undefined) return "";
+      const s = String(val);
+      if (/[,"\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const d = new Date();
+    const dateStr = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+    const filename = `sales-ledger-${dateStr}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headerCols = [
+      "Customer Name",
+      "Sale Order No",
+      "Order Date",
+      "Product Name",
+      "Variant",
+      "Order Value (Incl. Tax)",
+      "Order Qty",
+      "Received Qty",
+      "Returned Qty",
+      "Balance Qty"
+    ];
+    res.write(headerCols.map(csvEscape).join(",") + "\n");
+
+    for (const row of rows) {
+      const values = [
+        row.customer_name,
+        row.reference_number,
+        row.created_at ? moment(row.created_at).format("DD/MM/YYYY") : "",
+        row.product_name,
+        row.weight_per_unit ? `${row.weight_per_unit} ${row.label}` : "",
+        row.taxIncl,
+        row.qty,
+        row.total_received_qty,
+        row.total_returned_qty,
+        row.qty - row.total_received_qty
+      ];
+      res.write(values.map(csvEscape).join(",") + "\n");
+    }
+
+    return res.end();
   } catch (error) {
-    console.error("Ledger fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch ledger." });
+    console.log("Ledger export error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({ status: false, message: "Failed to export ledger." });
+    }
+    return res.end();
   }
 };
-
-
 
 exports.getProductsByPurchase = async (req, res) => {
   try {
@@ -4281,6 +4425,16 @@ exports.fetchSalesDetails = async (req, res) => {
                       required: false,
                     }
                   ]
+                }
+              ]
+            },
+            {
+              association: 'productVariant',
+              attributes: ['id', 'weight_per_unit', 'weight_per_pack'],
+              include: [
+                {
+                  association: 'masterUOM',
+                  attributes: ['id', 'label'],
                 }
               ]
             }

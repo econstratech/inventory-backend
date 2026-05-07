@@ -1709,192 +1709,196 @@ exports.UpdateStockOnly = async (req, res) => {
   @returns {Promise<object>} - The stock transfer product
 */
 const transferProduct = async (params) => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const { 
-        stockTransferLogId, 
-        transfer_type, 
-        from_store, 
-        to_store, 
-        product, 
-        transaction, 
-        salesOrder, 
-        purchaseOrder 
-      } = params;
+  try {
+    const { 
+      stockTransferLogId, 
+      transfer_type, 
+      from_store, 
+      to_store, 
+      product, 
+      transaction, 
+      salesOrder, 
+      purchaseOrder 
+    } = params;
 
-      // If the transferred quantity is less than or equal to 0, then return false
-      if (product.transferred_quantity <= 0) {
-        resolve(null);
-      }
+    // If the transferred quantity is less than or equal to 0, then return false
+    if (product.transferred_quantity <= 0) {
+      return true;
+    }
 
-      // Get the previous stock entry from the to store
-      const previousStockToStore = await ProductStockEntry.findOne({
+    // Get the previous stock entry from the to store
+    const previousStockToStore = await ProductStockEntry.findOne({
+      attributes: ['id', 'quantity'],
+      where: {
+        product_id: product.id,
+        ...(product.product_variant_id ? { product_variant_id: product.product_variant_id } : {}),
+        warehouse_id: 
+          transfer_type === 'sales_order_return' || transfer_type === 'purchase_order_return' ? product.warehouse_id 
+          : transfer_type === 'scrap_items' ? from_store : to_store,
+      },
+      raw: true,
+    });
+
+    // If the previous stock entry is not found, then return null
+    if (!previousStockToStore) {
+      return true;
+    }
+
+    // Create the stock transfer product
+    const stockTransferProduct = await StockTransferProducts.create({
+      stock_transfer_log_id: stockTransferLogId,
+      product_id: product.id,
+      product_variant_id: product.product_variant_id ? product.product_variant_id : null,
+      transferred_quantity: product.transferred_quantity,
+    }, { transaction });
+
+    if (transfer_type === 'stock_transfer' || transfer_type === 'scrap_items') {
+      const previousStockFromStore = await ProductStockEntry.findOne({
         attributes: ['id', 'quantity'],
+        raw: true,
         where: {
           product_id: product.id,
+          warehouse_id: from_store,
           ...(product.product_variant_id ? { product_variant_id: product.product_variant_id } : {}),
-          warehouse_id: 
-            transfer_type === 'sales_order_return' || transfer_type === 'purchase_order_return' ? product.warehouse_id 
-            : transfer_type === 'scrap_items' ? from_store : to_store,
         },
-        raw: true,
       });
 
-      // If the previous stock entry is not found, then return null
-      if (!previousStockToStore) {
-        return resolve(null);
-      }
+      await ProductStockEntry.decrement({
+        quantity: product.transferred_quantity,
+      }, 
+      {
+        where: {
+          id: previousStockFromStore.id,
+        },
+        transaction,
+      });
+    }
 
-      // Create the stock transfer product
-      const stockTransferProduct = await StockTransferProducts.create({
-        stock_transfer_log_id: stockTransferLogId,
-        product_id: product.id,
-        product_variant_id: product.product_variant_id ? product.product_variant_id : null,
-        transferred_quantity: product.transferred_quantity,
-      }, { transaction });
+    // If the transfer type is stock transfer, add to stock, or sales order return, then increase the quantity of the product stock entry
+    if (previousStockToStore &&['stock_transfer', 'add_to_stock', 'sales_order_return'].includes(transfer_type)) {
+      await ProductStockEntry.increment({
+        quantity: product.transferred_quantity,
+      }, {
+        where: { id: previousStockToStore.id },
+        transaction,
+      });
+    }
 
-      let previousStockFromStore = null;
+    // If the product is batch applicable and the transfer type is scrap items, then reduce the quantity of the batch from the receive product batch
+    if (['scrap_items', 'sales_order_return','purchase_order_return'].includes(transfer_type) && product.is_batch_applicable) {
+      const processBatchOperations = [];
+      product.batches.forEach(batch => {
+          processBatchOperations.push(
+            new Promise(async (resolve, reject) => {
+              try {
+                const receiveProductBatch = await ReceiveProductBatch.findOne({
+                  attributes: ['id', 'available_quantity', 'returned_quantity'],
+                  where: { id: batch.id },
+                  transaction,
+                  include: [
+                    {
+                      association: 'receiveProduct',
+                      attributes: ['id', 'available_quantity'],
+                    }
+                  ]
+                });
+                // If the receive product batch is not found, then return null
+                if (!receiveProductBatch) {
+                  return true;
+                }
 
-      if (transfer_type === 'stock_transfer' || transfer_type === 'scrap_items') {
-        previousStockFromStore = await ProductStockEntry.findOne({
-          attributes: ['id', 'quantity'],
-          raw: true,
-          where: {
-            product_id: product.id,
-            warehouse_id: from_store,
-            ...(product.product_variant_id ? { product_variant_id: product.product_variant_id } : {}),
-          },
-        });
+                const previouslyReturnedQuantity = receiveProductBatch.returned_quantity || 0;
 
-        await ProductStockEntry.update({
-          quantity: previousStockFromStore.quantity - product.transferred_quantity,
-        }, 
-        {
-          where: {
-            id: previousStockFromStore.id,
-          },
-          transaction,
-        });
-      }
+                if (transfer_type === 'scrap_items') {
+                  // Reduce the quantity of the batch from the receive product batch
+                  await ReceiveProductBatch.update({
+                    available_quantity: batch.available_quantity - batch.quantity,
+                  }, {
+                    where: { id: batch.id }, transaction 
+                  });
 
-      // If the transfer type is stock transfer, add to stock, or sales order return, then increase the quantity of the product stock entry
-      if (previousStockToStore &&['stock_transfer', 'add_to_stock', 'sales_order_return'].includes(transfer_type)) {
-        await ProductStockEntry.update({
-          quantity: previousStockToStore.quantity + product.transferred_quantity,
+                  // Reduce the quantity of the receive product from the receive product
+                  await RecvProduct.update({
+                    available_quantity: receiveProductBatch.receiveProduct.available_quantity - batch.quantity,
+                  }, {
+                    where: { id: receiveProductBatch.receiveProduct.id }, transaction 
+                  });
+                } else if (transfer_type === 'purchase_order_return') {
+                  // Increase the quantity of the batch from the receive product batch
+                  await ReceiveProductBatch.update({
+                    returned_quantity: previouslyReturnedQuantity + batch.quantity,
+                  }, {
+                    where: { id: batch.id }, transaction 
+                  });
+                } else if (transfer_type === 'sales_order_return') {
+                  // Increase the quantity of the batch from the receive product batch
+                  await ReceiveProductBatch.update({
+                    returned_quantity: previouslyReturnedQuantity + batch.quantity,
+                  }, {
+                    where: { id: batch.id }, transaction 
+                  });
+                }
+
+
+                // Insert the stock transfer batch
+                await StockTransferBatch.create({
+                  stock_transfer_log_id: stockTransferLogId,
+                  stock_transfer_product_id: stockTransferProduct.id,
+                  receive_product_batch_id: batch.id,
+                  quantity: batch.quantity,
+                }, { transaction });
+                // Return the success
+              return true;
+            } catch (error) {
+              console.log("Error in processBatchOperations", error);
+              return false;
+            }
+          }),
+        );
+      });
+      // Reduce the quantity of the product stock entry from the product stock entry
+      processBatchOperations.push(
+        ProductStockEntry.decrement({
+          quantity: product.transferred_quantity,
         }, {
-          where: 
-          {
+          where: {
             id: previousStockToStore.id,
           },
           transaction,
-        });
-      }
-
-      // If the product is batch applicable and the transfer type is scrap items, then reduce the quantity of the batch from the receive product batch
-      if (['scrap_items', 'sales_order_return','purchase_order_return'].includes(transfer_type) && product.is_batch_applicable) {
-        const processBatchOperations = [];
-        product.batches.forEach(batch => {
-            processBatchOperations.push(
-              new Promise(async (resolve, reject) => {
-                try {
-                  const receiveProductBatch = await ReceiveProductBatch.findOne({
-                    attributes: ['id', 'available_quantity', 'returned_quantity'],
-                    where: { id: batch.id },
-                    transaction,
-                    include: [
-                      {
-                        association: 'receiveProduct',
-                        attributes: ['id', 'available_quantity'],
-                      }
-                    ]
-                  });
-                  // If the receive product batch is not found, then return null
-                  if (!receiveProductBatch) {
-                    return resolve(null);
-                  }
-
-                  const previouslyReturnedQuantity = receiveProductBatch.returned_quantity || 0;
-
-                  if (transfer_type === 'scrap_items') {
-                    // Reduce the quantity of the batch from the receive product batch
-                    await ReceiveProductBatch.update({
-                      available_quantity: batch.available_quantity - batch.quantity,
-                    }, {
-                      where: { id: batch.id }, transaction 
-                    });
-
-                    // Reduce the quantity of the receive product from the receive product
-                    await RecvProduct.update({
-                      available_quantity: receiveProductBatch.receiveProduct.available_quantity - batch.quantity,
-                    }, {
-                      where: { id: receiveProductBatch.receiveProduct.id }, transaction 
-                    });
-                  } else if (transfer_type === 'purchase_order_return') {
-                    // Increase the quantity of the batch from the receive product batch
-                    await ReceiveProductBatch.update({
-                      returned_quantity: previouslyReturnedQuantity + batch.quantity,
-                    }, {
-                      where: { id: batch.id }, transaction 
-                    });
-                  } else if (transfer_type === 'sales_order_return') {
-                    // Increase the quantity of the batch from the receive product batch
-                    await ReceiveProductBatch.update({
-                      returned_quantity: previouslyReturnedQuantity + batch.quantity,
-                    }, {
-                      where: { id: batch.id }, transaction 
-                    });
-                  }
-
-
-                  // Insert the stock transfer batch
-                  await StockTransferBatch.create({
-                    stock_transfer_log_id: stockTransferLogId,
-                    stock_transfer_product_id: stockTransferProduct.id,
-                    receive_product_batch_id: batch.id,
-                    quantity: batch.quantity,
-                  }, { transaction });
-                  // Return the success
-                resolve();
-              } catch (error) {
-                console.error("Error in processBatchOperations", error);
-                reject(error);
-              }
-            }),
-          );
-        });
-        // Reduce the quantity of the product stock entry from the product stock entry
-        processBatchOperations.push(
-          ProductStockEntry.update({
-            quantity: previousStockToStore.quantity - product.transferred_quantity,
-          }, {
-            where: {
-              id: previousStockToStore.id,
-            },
-            transaction,
-          }),
-        )
-        // Execute the batch operations
-        await Promise.all(processBatchOperations);
-      }
-
-      if (transfer_type === 'purchase_order_return') {
-        // Reduce the quantity of the receive product from the receive product
-        await RecvProduct.update({
-          returned_quantity: product.returned_quantity + product.transferred_quantity,
-        }, {
-          where: {
-            id: product.id
-          }, transaction 
-        });
-      }
-
-      // Return the stock transfer product
-      resolve(stockTransferProduct);
-    } catch (error) {
-      console.error("Error transferring product:", error);
-      reject(new Error("Error transferring product"));
+        }),
+      )
+      // Execute the batch operations
+      await Promise.all(processBatchOperations);
     }
-  });
+
+    if (transfer_type === 'purchase_order_return') {
+      // Reduce the quantity of the receive product from the receive product
+      await RecvProduct.increment({
+        returned_quantity: product.transferred_quantity,
+      }, {
+        where: {
+          id: product.id
+        }, 
+        transaction 
+      });
+    } else if (transfer_type === 'sales_order_return') {
+      // Reduce the quantity of the receive product from the receive product
+      await SalesProductReceived.increment({
+        returned_quantity: product.transferred_quantity,
+      }, {
+        where: {
+          id: product.id
+        }, 
+        transaction 
+      });
+    }
+
+    // Return the stock transfer product
+    return stockTransferProduct;
+  } catch (error) {
+    console.log("Error transferring product:", error);
+    throw error;
+  }
 };
 
 /**
@@ -1969,7 +1973,6 @@ exports.UpdateStockTranfer = async (req, res) => {
       purchase_id: purchaseOrder ? purchaseOrder.id : null,
     }, { transaction });
 
-    console.log("bbb", transaction.finished);
     // Prepare the stock transfer products promises
     const stockTransferProductsPromises = products.map(product => {
       // If the transferred quantity is less than or equal to 0, then return null
@@ -2009,7 +2012,7 @@ exports.UpdateStockTranfer = async (req, res) => {
       .status(200)
       .json({ status: true, message: "Stock transfer recorded successfully" });
   } catch (error) {
-    console.error("Error in UpdateStockTranfer:", error);
+    console.log("Error in UpdateStockTranfer:", error);
     if (transaction) {
       await transaction.rollback();
     }

@@ -1424,3 +1424,245 @@
  *                   type: string
  *                   example: "Database connection error"
  */
+
+/**
+ * @swagger
+ * /api/sales/salesLedger:
+ *   post:
+ *     summary: Get sales ledger (paginated)
+ *     description: Returns paginated sales ledger rows joined across sale, sales_product, product, product_variants, master_uom, and customer. For each sales product line, also returns the aggregated total received and total returned quantities from sales_product_received. Optional filters by customer and invoice date range.
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customer_id:
+ *                 type: integer
+ *                 description: Filter ledger entries by customer ID. Ignored if not a valid number.
+ *                 example: 12
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date (YYYY-MM-DD) for invoice_date filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-01-01"
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 description: End date (YYYY-MM-DD) for invoice_date filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-03-31"
+ *               page:
+ *                 type: integer
+ *                 minimum: 1
+ *                 default: 1
+ *                 description: Page number (1-indexed). Defaults to 1.
+ *                 example: 1
+ *               limit:
+ *                 type: integer
+ *                 minimum: 1
+ *                 default: 15
+ *                 description: Page size. Defaults to 15.
+ *                 example: 15
+ *           example:
+ *             customer_id: 12
+ *             startDate: "2025-01-01"
+ *             endDate: "2025-03-31"
+ *             page: 1
+ *             limit: 15
+ *     responses:
+ *       200:
+ *         description: Sales ledger fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Sales ledger fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       description: Total number of ledger rows matching the filters
+ *                       example: 142
+ *                     page:
+ *                       type: integer
+ *                       description: Current page (1-indexed)
+ *                       example: 1
+ *                     pageSize:
+ *                       type: integer
+ *                       description: Page size used for this response
+ *                       example: 15
+ *                     totalPages:
+ *                       type: integer
+ *                       description: Total number of pages for the current filter set
+ *                       example: 10
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           customer_name:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Customer name
+ *                             example: "Acme Corporation"
+ *                           reference_number:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Sales order reference number
+ *                             example: "SO-2025-0001"
+ *                           created_at:
+ *                             type: string
+ *                             format: date-time
+ *                             description: Sales order creation timestamp
+ *                             example: "2025-01-15T10:30:00.000Z"
+ *                           qty:
+ *                             type: number
+ *                             description: Quantity ordered for this sales product line
+ *                             example: 100
+ *                           product_name:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Product name
+ *                             example: "Widget A"
+ *                           weight_per_unit:
+ *                             type: number
+ *                             nullable: true
+ *                             description: Weight per unit from product variant
+ *                             example: 2.5
+ *                           label:
+ *                             type: string
+ *                             nullable: true
+ *                             description: UoM label from master_uom
+ *                             example: "kg"
+ *                           taxIncl:
+ *                             type: number
+ *                             description: Tax-inclusive amount for this line
+ *                             example: 11800.00
+ *                           invoice_number:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Invoice number for this sales product
+ *                             example: "INV-2025-0001"
+ *                           invoice_date:
+ *                             type: string
+ *                             format: date
+ *                             nullable: true
+ *                             description: Invoice date
+ *                             example: "2025-01-20"
+ *                           product_id:
+ *                             type: integer
+ *                             nullable: true
+ *                             description: Product ID
+ *                             example: 45
+ *                           production_status:
+ *                             type: integer
+ *                             nullable: true
+ *                             description: Production status code for the sales product
+ *                             example: 1
+ *                           production_number:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Production reference number
+ *                             example: "PROD-2025-0001"
+ *                           is_dispatched:
+ *                             type: integer
+ *                             description: Dispatch flag (1 = dispatched, 0 = not dispatched)
+ *                             example: 1
+ *                           total_received_qty:
+ *                             type: number
+ *                             description: Sum of received_quantity from sales_product_received for this sales product (excluding soft-deleted rows). 0 when no receipts exist.
+ *                             example: 80
+ *                           total_returned_qty:
+ *                             type: number
+ *                             description: Sum of returned_quantity from sales_product_received for this sales product (excluding soft-deleted rows). 0 when no returns exist.
+ *                             example: 5
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to fetch ledger."
+ */
+
+/**
+ * @swagger
+ * /api/sales/salesLedger/export:
+ *   post:
+ *     summary: Export sales ledger as CSV (no pagination)
+ *     description: |
+ *       Streams the full sales ledger as a CSV file using the same filters as `/api/sales/salesLedger`.
+ *       Pagination is intentionally not applied — every matching row is included.
+ *       Columns: `Customer Name, Reference Number, Created At, Quantity, Product Name, Weight Per Unit, UOM, Tax Incl Amount, Invoice Number, Invoice Date, Product ID, Production Status, Production Number, Is Dispatched, Total Received Qty, Total Returned Qty`.
+ *     tags: [Sales]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customer_id:
+ *                 type: integer
+ *                 description: Filter ledger entries by customer ID. Ignored if not a valid number.
+ *                 example: 12
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date (YYYY-MM-DD) for invoice_date filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-01-01"
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 description: End date (YYYY-MM-DD) for invoice_date filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-03-31"
+ *           example:
+ *             customer_id: 12
+ *             startDate: "2025-01-01"
+ *             endDate: "2025-03-31"
+ *     responses:
+ *       200:
+ *         description: CSV file download containing all matching ledger rows.
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: attachment; filename="sales-ledger-DDMMYYYY.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       500:
+ *         description: Server error (only if headers not yet sent)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to export ledger."
+ */

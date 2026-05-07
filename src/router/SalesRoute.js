@@ -52,8 +52,9 @@ const {
     deductStock, 
     GetAllPurchaseOrderforFloormanagment, 
     GetAllWorkOrderForReport, 
-    getSalesLedger, 
-    salesLedger, 
+    getSalesLedger,
+    salesLedger,
+    exportSalesLedger,
     GetAlldispatchlist, 
     dispatchProduct, 
     GetAllDdone, 
@@ -143,5 +144,6 @@ router.get("/dispatch/stockUpdate/:pid/:sid", authToken, stockUpdate);
 router.post("/dispatch/deductStock", authToken, deductStock);
 router.get("/dispatch/allworkorderdispatchfor_report", authToken, GetAllWorkOrderForReport);
 router.post("/salesLedger", authToken, salesLedger);
+router.post("/salesLedger/export", authToken, exportSalesLedger);
 
 module.exports = router;
