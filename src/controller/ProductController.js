@@ -1882,7 +1882,6 @@ const transferProduct = async (params) => {
         transaction 
       });
     } else if (transfer_type === 'sales_order_return') {
-      console.log("Processing sales order return for product ID:", product.id, "with transferred quantity:", product.transferred_quantity);
       // Reduce the quantity of the receive product from the receive product
       await SalesProductReceived.increment({
         returned_quantity: product.transferred_quantity,
