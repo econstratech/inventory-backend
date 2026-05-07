@@ -608,6 +608,7 @@ exports.DeleteBOM = async (req, res) => {
 exports.GetBOMReport = async (req, res) => {
     try {
         const { fg_product_id, product_type_id } = req.query;
+        // const isVariantBased = req.user.is_variant_based;
         // Pagination params
         const page = parseInt(req.query.page, 10) || 1;
         const limit = parseInt(req.query.limit, 10) || 10;
@@ -667,8 +668,8 @@ exports.GetBOMReport = async (req, res) => {
             /* INVENTORY NEEDED */
             (
                 (
-                    fp.buffer_size
-                    + (fp.buffer_size * 0.005)
+                    pse_fp.buffer_size
+                    + (pse_fp.buffer_size * 0.005)
                     + pse.sale_order_recieved
                 )
                 -
@@ -682,8 +683,9 @@ exports.GetBOMReport = async (req, res) => {
         const joiningAndConditions = `FROM product_stock_entries pse
             INNER JOIN master_bom mb ON mb.final_product_id = pse.product_id
             INNER JOIN product fp ON fp.id = pse.product_id
-            INNER JOIN product rmp ON rmp.id = mb.raw_material_product_id
-            LEFT JOIN product_stock_entries pse_rm ON pse_rm.product_id = fp.id
+            INNER JOIN product rmp ON rmp.id = mb.raw_material_product_id 
+            LEFT JOIN product_stock_entries pse_fp ON pse_fp.product_id = fp.id 
+            LEFT JOIN product_stock_entries pse_rm ON pse_rm.product_id = rmp.id
             LEFT JOIN warehouses w_rm ON w_rm.id = pse_rm.warehouse_id
             LEFT JOIN master_product_types mpt ON mpt.id = fp.product_type_id
             LEFT JOIN warehouses w ON w.id = pse.warehouse_id
@@ -696,8 +698,8 @@ exports.GetBOMReport = async (req, res) => {
             /* INVENTORY NEEDED FILTER */
             AND (
                 (
-                    fp.buffer_size
-                    + (fp.buffer_size * 0.005)
+                    pse_fp.buffer_size
+                    + (pse_fp.buffer_size * 0.005)
                     + pse.sale_order_recieved
                 )
                 -
@@ -733,7 +735,8 @@ exports.GetBOMReport = async (req, res) => {
         const rows = await sequelize.query(dataQuery, {
             replacements,
             type: QueryTypes.SELECT,
-            raw: true
+            raw: true,
+            // logging: (sql) => console.log("[BOM dataQuery]", sql)
         });
 
         // Transform SQL results to match expected structure
