@@ -15,6 +15,10 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.BIGINT,
         allowNull: false,
     },
+    user_id: {
+        type: DataTypes.BIGINT,
+        allowNull: false,
+    },
     production_planning_id: {
         type: DataTypes.BIGINT,
         allowNull: true,

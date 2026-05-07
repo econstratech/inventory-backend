@@ -34,6 +34,7 @@ exports.CreateWorkOrder = async (req, res) => {
         // create work order payload
         const wo_payload = {
             ...req.body,
+            user_id: req.user.id,
             company_id: req.user.company_id,
             wo_number: referenceNumber,
             status: 1, // 1: Pending
@@ -110,6 +111,7 @@ exports.CreateMultipleWorkOrders = async (req, res) => {
             const referenceNumber = CommonHelper.generateUniqueReferenceNumber("WO", 6);
             const wo_payload = {
                 ...input,
+                user_id: req.user.id,
                 company_id: req.user.company_id,
                 wo_number: referenceNumber,
                 status: 1, // 1: Pending
@@ -257,6 +259,7 @@ exports.GetAllWorkOrders = async (req, res) => {
                 'material_issued_at',
                 'progress_percent',
                 'material_issue_percent',
+                'user_id',
                 'created_at', 
                 'updated_at'
             ],

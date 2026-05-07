@@ -38,6 +38,11 @@ const SalesProductReceived = sequelize.define('SalesProductReceived', {
         allowNull: false,
         defaultValue: 0,
     },
+    returned_quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
     unit_price: {
         type: DataTypes.DECIMAL,
         allowNull: false,
