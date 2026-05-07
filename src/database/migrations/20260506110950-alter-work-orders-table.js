@@ -34,7 +34,8 @@ exports.up = function(db) {
     return db.addColumn('sales_product_received', 'returned_quantity', {
       type: 'int',
       notNull: false,
-      after: 'rejected_quantity'
+      after: 'rejected_quantity',
+      defaultValue: 0,
     });
   });
 };
