@@ -3567,7 +3567,7 @@ exports.purchaseLedger = async (req, res) => {
     const rows = await sequelize.query(dataQuery, {
       replacements,
       type: sequelize.QueryTypes.SELECT,
-      logging: console.log, // ✅ Debugging: Log the count query
+      // logging: console.log, // ✅ Debugging: Log the count query
     });
 
     const total = Number(countRow?.total) || 0;
