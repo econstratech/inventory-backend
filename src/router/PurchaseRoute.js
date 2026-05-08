@@ -51,6 +51,7 @@ const {
     getPurchasesWithStatusNine, 
     getPurchaseOrderSummary, 
     purchaseLedger, 
+    exportPurchaseLedger,
     DeletePurchaseItem, 
     ApprovedByManagement, 
     RejectedByManagement,
@@ -124,6 +125,8 @@ router.get("/monthly-report",authToken,GetMonthlyRFQPurchaseReport);
 router.get('/status-9',authToken, getPurchasesWithStatusNine);
 router.get('/getPurchaseOrderSummary',authToken, getPurchaseOrderSummary);
 router.post('/purchaseLedger',authToken, purchaseLedger);
+router.post("/purchaseLedger/export", authToken, exportPurchaseLedger);
+
 
 //Report related routes
 router.get('/report/current-month-purchase-amount',authToken, getCurrentMonthPurchaseAmount);

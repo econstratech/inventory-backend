@@ -3468,7 +3468,7 @@ exports.getPurchaseOrderSummary = async (req, res) => {
       raw: true
     });
 
-    console.log("Query returned rows:", results.length); // ✅ Debugging
+    // console.log("Query returned rows:", results.length); // ✅ Debugging
 
     res.status(200).json({ success: true, data: results });
   } catch (error) {
@@ -3478,75 +3478,243 @@ exports.getPurchaseOrderSummary = async (req, res) => {
 };
 
 exports.purchaseLedger = async (req, res) => {
-  const { vendor_id, startDate, endDate } = req.body;
-
   try {
-    const company_id = req.user?.company_id; // optional chaining, safer
+    const { vendor_id, startDate, endDate } = req.body;
+    const company_id = req.user?.company_id;
+
+    // Pagination params
+    const page = Math.max(1, parseInt(req.body.page, 10) || 1);
+    const pageSize = Math.max(1, parseInt(req.body.limit, 10) || 15);
+    const offset = (page - 1) * pageSize;
 
     // Base conditions
-    let conditions = `WHERE p.status >= 5 AND p.mailsend_status = 1`;
+    let conditions = "WHERE p.status >= 5 ";
     const replacements = {};
 
-    if (vendor_id) {
-      conditions += ` AND p.vendor_id = :vendor_id`;
-      replacements.vendor_id = vendor_id;
-    }
-
     if (company_id) {
-      conditions += ` AND p.company_id = :company_id`;
+      conditions += " AND p.company_id = :company_id";
       replacements.company_id = company_id;
     }
 
-    if (startDate && endDate) {
-      conditions += ` AND DATE(p.created_at) BETWEEN :startDate AND :endDate`;
-      replacements.startDate = startDate;
-      replacements.endDate = endDate;
-
+    if (vendor_id && !isNaN(vendor_id)) {
+      conditions += " AND p.vendor_id = :vendor_id";
+      replacements.vendor_id = vendor_id;
     }
 
-    const query = `
-      SELECT 
-          v.vendor_name,
-          p.reference_number,
-          r.bill_number,
-          pr.product_name,
-          DATE(r.bill_date) AS recv_date,
-          rp.product_id,
-          rp.qty AS ordered,
-          rp.received,
-          -- Remaining before this bill
-          (rp.qty - SUM(rp.received) OVER (
-              PARTITION BY p.reference_number, rp.product_id
-              ORDER BY r.created_at
-              ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-          )) AS remaining_before,
-          -- Remaining after this bill
-          (rp.qty - SUM(rp.received) OVER (
-              PARTITION BY p.reference_number, rp.product_id
-              ORDER BY r.created_at
-              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-          )) AS remaining_after,
-          p.company_id
-      FROM recvproduct rp
-      JOIN recv r ON r.id = rp.bill_id
-      JOIN purchase p ON p.id = rp.purchase_id
-      JOIN vendor v ON v.id = p.vendor_id
-      JOIN product pr ON pr.id = rp.product_id
+    if (startDate && endDate) {
+      conditions += " AND DATE(p.created_at) BETWEEN :startDate AND :endDate";
+      replacements.startDate = startDate;
+      replacements.endDate = endDate;
+    }
+
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM purchase_product pp
+      LEFT JOIN purchase p ON p.id = pp.purchase_id
       ${conditions}
-      ORDER BY v.vendor_name, p.reference_number, rp.product_id, r.created_at
     `;
 
-    // Note: Do NOT destructure the results here, sequelize returns array directly on SELECT
-    const results = await sequelize.query(query, {
+    const dataQuery = `
+      SELECT
+        pp.id AS purchase_product_id,
+        v.vendor_name,
+        p.reference_number,
+        p.created_at AS order_date,
+        pr.id AS product_id,
+        pr.product_name,
+        pv.id AS product_variant_id,
+        pv.weight_per_unit,
+        vu.label AS uom_label,
+        pp.qty AS order_quantity,
+        COALESCE((
+          SELECT SUM(rp.received)
+          FROM recvproduct rp
+          WHERE rp.purchase_id = pp.purchase_id
+            AND rp.product_id = pp.product_id
+            AND (
+              rp.product_variant_id = pp.product_variant_id
+              OR (rp.product_variant_id IS NULL AND pp.product_variant_id IS NULL)
+            )
+        ), 0) AS received_quantity,
+        COALESCE((
+          SELECT SUM(rp.returned_quantity)
+          FROM recvproduct rp
+          WHERE rp.purchase_id = pp.purchase_id
+            AND rp.product_id = pp.product_id
+            AND (
+              rp.product_variant_id = pp.product_variant_id
+              OR (rp.product_variant_id IS NULL AND pp.product_variant_id IS NULL)
+            )
+        ), 0) AS returned_quantity
+      FROM purchase_product pp
+      LEFT JOIN purchase p ON p.id = pp.purchase_id
+      LEFT JOIN vendor v ON v.id = p.vendor_id
+      LEFT JOIN product pr ON pr.id = pp.product_id
+      LEFT JOIN product_variants pv ON pv.id = pp.product_variant_id
+      LEFT JOIN master_uom vu ON vu.id = pv.uom_id
+      ${conditions}
+      ORDER BY p.created_at DESC, pp.id ASC
+      LIMIT :limit OFFSET :offset
+    `;
+
+    replacements.limit = pageSize;
+    replacements.offset = offset;
+
+    const [countRow] = await sequelize.query(countQuery, {
+      replacements,
+      type: sequelize.QueryTypes.SELECT,
+    });
+    const rows = await sequelize.query(dataQuery, {
+      replacements,
+      type: sequelize.QueryTypes.SELECT,
+      logging: console.log, // ✅ Debugging: Log the count query
+    });
+
+    const total = Number(countRow?.total) || 0;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    return res.status(200).json({
+      status: true,
+      message: "Purchase ledger fetched successfully",
+      data: {
+        total,
+        page,
+        pageSize,
+        totalPages,
+        rows,
+      },
+    });
+  } catch (error) {
+    console.error("Purchase ledger fetch error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch purchase ledger.",
+    });
+  }
+};
+
+exports.exportPurchaseLedger = async (req, res) => {
+  try {
+    const { vendor_id, startDate, endDate } = req.body;
+    const company_id = req.user?.company_id;
+
+    let conditions = "WHERE p.status >= 5 ";
+    const replacements = {};
+
+    if (company_id) {
+      conditions += " AND p.company_id = :company_id";
+      replacements.company_id = company_id;
+    }
+
+    if (vendor_id && !isNaN(vendor_id)) {
+      conditions += " AND p.vendor_id = :vendor_id";
+      replacements.vendor_id = vendor_id;
+    }
+
+    if (startDate && endDate) {
+      conditions += " AND DATE(p.created_at) BETWEEN :startDate AND :endDate";
+      replacements.startDate = startDate;
+      replacements.endDate = endDate;
+    }
+
+    const dataQuery = `
+      SELECT
+        v.vendor_name,
+        p.reference_number,
+        p.created_at AS order_date,
+        pr.product_name,
+        pv.weight_per_unit,
+        vu.label AS uom_label,
+        pp.qty AS order_quantity,
+        COALESCE((
+          SELECT SUM(rp.received)
+          FROM recvproduct rp
+          WHERE rp.purchase_id = pp.purchase_id
+            AND rp.product_id = pp.product_id
+            AND (
+              rp.product_variant_id = pp.product_variant_id
+              OR (rp.product_variant_id IS NULL AND pp.product_variant_id IS NULL)
+            )
+        ), 0) AS received_quantity,
+        COALESCE((
+          SELECT SUM(rp.returned_quantity)
+          FROM recvproduct rp
+          WHERE rp.purchase_id = pp.purchase_id
+            AND rp.product_id = pp.product_id
+            AND (
+              rp.product_variant_id = pp.product_variant_id
+              OR (rp.product_variant_id IS NULL AND pp.product_variant_id IS NULL)
+            )
+        ), 0) AS returned_quantity
+      FROM purchase_product pp
+      LEFT JOIN purchase p ON p.id = pp.purchase_id
+      LEFT JOIN vendor v ON v.id = p.vendor_id
+      LEFT JOIN product pr ON pr.id = pp.product_id
+      LEFT JOIN product_variants pv ON pv.id = pp.product_variant_id
+      LEFT JOIN master_uom vu ON vu.id = pv.uom_id
+      ${conditions}
+      ORDER BY p.created_at DESC, pp.id ASC
+    `;
+
+    const rows = await sequelize.query(dataQuery, {
       replacements,
       type: sequelize.QueryTypes.SELECT,
     });
 
-    console.log("Purchase Ledger results count:", results.length);
-    res.status(200).json(results);
+    const csvEscape = (val) => {
+      if (val === null || val === undefined) return "";
+      const s = String(val);
+      if (/[,"\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+      return s;
+    };
+
+    const d = new Date();
+    const dateStr = `${String(d.getDate()).padStart(2, "0")}${String(d.getMonth() + 1).padStart(2, "0")}${d.getFullYear()}`;
+    const filename = `purchase-ledger-${dateStr}.csv`;
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    const headerCols = [
+      "Vendor Name",
+      "PO No",
+      "Order Date",
+      "Product Name",
+      "Variant",
+      "Order Qty",
+      "Received Qty",
+      "Returned Qty",
+      "Balance Qty",
+    ];
+    res.write(headerCols.map(csvEscape).join(",") + "\n");
+
+    for (const row of rows) {
+      const orderQty = Number(row.order_quantity) || 0;
+      const receivedQty = Number(row.received_quantity) || 0;
+      const values = [
+        row.vendor_name,
+        row.reference_number,
+        row.order_date ? moment(row.order_date).format("DD/MM/YYYY") : "",
+        row.product_name,
+        row.weight_per_unit ? `${row.weight_per_unit} ${row.uom_label || ""}`.trim() : "",
+        orderQty,
+        receivedQty,
+        Number(row.returned_quantity) || 0,
+        orderQty - receivedQty,
+      ];
+      res.write(values.map(csvEscape).join(",") + "\n");
+    }
+
+    return res.end();
   } catch (error) {
-    console.error("Error generating purchase ledger:", error);
-    res.status(500).json({ error: "Failed to generate purchase ledger" });
+    console.error("Purchase ledger export error:", error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        status: false,
+        message: "Failed to export purchase ledger.",
+      });
+    }
+    return res.end();
   }
 };
 

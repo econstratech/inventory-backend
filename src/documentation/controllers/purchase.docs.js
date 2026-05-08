@@ -1329,3 +1329,235 @@
  *                   type: string
  *                   description: Error message
  */
+
+/**
+ * @swagger
+ * /api/purchase/purchaseLedger:
+ *   post:
+ *     summary: Get purchase ledger (paginated)
+ *     description: |
+ *       Returns paginated purchase ledger rows joined across `purchase`, `purchase_product`, `product`, `product_variants`, `master_uom`, and `vendor`.
+ *       For each purchase order line, also returns aggregated received and returned quantities computed from `recvproduct` (matched by `purchase_id`, `product_id`, and `product_variant_id`).
+ *       Only purchase orders with `status >= 5` and `mailsend_status = 1` are included. Optional filters by vendor and order-creation date range.
+ *     tags: [Purchase]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               vendor_id:
+ *                 type: integer
+ *                 description: Filter ledger entries by vendor ID. Ignored if not a valid number.
+ *                 example: 7
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date (YYYY-MM-DD) for purchase `created_at` filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-01-01"
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 description: End date (YYYY-MM-DD) for purchase `created_at` filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-03-31"
+ *               page:
+ *                 type: integer
+ *                 minimum: 1
+ *                 default: 1
+ *                 description: Page number (1-indexed). Defaults to 1.
+ *                 example: 1
+ *               limit:
+ *                 type: integer
+ *                 minimum: 1
+ *                 default: 15
+ *                 description: Page size. Defaults to 15.
+ *                 example: 15
+ *           example:
+ *             vendor_id: 7
+ *             startDate: "2025-01-01"
+ *             endDate: "2025-03-31"
+ *             page: 1
+ *             limit: 15
+ *     responses:
+ *       200:
+ *         description: Purchase ledger fetched successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Purchase ledger fetched successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                       description: Total number of ledger rows matching the filters
+ *                       example: 86
+ *                     page:
+ *                       type: integer
+ *                       description: Current page (1-indexed)
+ *                       example: 1
+ *                     pageSize:
+ *                       type: integer
+ *                       description: Page size used for this response
+ *                       example: 15
+ *                     totalPages:
+ *                       type: integer
+ *                       description: Total number of pages for the current filter set
+ *                       example: 6
+ *                     rows:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           purchase_product_id:
+ *                             type: integer
+ *                             description: Purchase product line ID (unique row key)
+ *                             example: 412
+ *                           vendor_name:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Vendor name
+ *                             example: "Global Supplies Pvt Ltd"
+ *                           reference_number:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Purchase order reference number
+ *                             example: "PO-2025-0001"
+ *                           order_date:
+ *                             type: string
+ *                             format: date-time
+ *                             description: Purchase order creation timestamp
+ *                             example: "2025-01-15T10:30:00.000Z"
+ *                           product_id:
+ *                             type: integer
+ *                             nullable: true
+ *                             description: Product ID
+ *                             example: 45
+ *                           product_name:
+ *                             type: string
+ *                             nullable: true
+ *                             description: Product name
+ *                             example: "Widget A"
+ *                           product_variant_id:
+ *                             type: integer
+ *                             nullable: true
+ *                             description: Product variant ID (null when the line is not variant-based)
+ *                             example: 102
+ *                           weight_per_unit:
+ *                             type: number
+ *                             nullable: true
+ *                             description: Weight per unit from product variant
+ *                             example: 2.5
+ *                           uom_label:
+ *                             type: string
+ *                             nullable: true
+ *                             description: UoM label from master_uom
+ *                             example: "kg"
+ *                           order_quantity:
+ *                             type: number
+ *                             description: Quantity ordered for this purchase product line
+ *                             example: 100
+ *                           received_quantity:
+ *                             type: number
+ *                             description: Sum of `received` from recvproduct for this purchase line (matched by purchase_id + product_id + product_variant_id). 0 when no receipts exist.
+ *                             example: 80
+ *                           returned_quantity:
+ *                             type: number
+ *                             description: Sum of `returned_quantity` from recvproduct for this purchase line (matched by purchase_id + product_id + product_variant_id). 0 when no returns exist.
+ *                             example: 5
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to fetch purchase ledger."
+ */
+
+/**
+ * @swagger
+ * /api/purchase/purchaseLedger/export:
+ *   post:
+ *     summary: Export purchase ledger as CSV (no pagination)
+ *     description: |
+ *       Streams the full purchase ledger as a CSV file using the same filters as `/api/purchase/purchaseLedger`.
+ *       Pagination is intentionally not applied — every matching row is included.
+ *       Columns: `Vendor Name, PO Reference No, Order Date, Product Name, Variant, Order Qty, Received Qty, Returned Qty, Balance Qty`. Balance Qty = Order Qty − Received Qty.
+ *     tags: [Purchase]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               vendor_id:
+ *                 type: integer
+ *                 description: Filter ledger entries by vendor ID. Ignored if not a valid number.
+ *                 example: 7
+ *               startDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Start date (YYYY-MM-DD) for purchase `created_at` filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-01-01"
+ *               endDate:
+ *                 type: string
+ *                 format: date
+ *                 description: End date (YYYY-MM-DD) for purchase `created_at` filter. Both startDate and endDate must be provided together.
+ *                 example: "2025-03-31"
+ *           example:
+ *             vendor_id: 7
+ *             startDate: "2025-01-01"
+ *             endDate: "2025-03-31"
+ *     responses:
+ *       200:
+ *         description: CSV file download
+ *         headers:
+ *           Content-Type:
+ *             schema:
+ *               type: string
+ *             description: text/csv; charset=utf-8
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: attachment; filename="purchase-ledger-DDMMYYYY.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *               example: |
+ *                 Vendor Name,PO Reference No,Order Date,Product Name,Variant,Order Qty,Received Qty,Returned Qty,Balance Qty
+ *                 Global Supplies Pvt Ltd,PO-2025-0001,15/01/2025,Widget A,2.5 kg,100,80,5,20
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to export purchase ledger."
+ */
