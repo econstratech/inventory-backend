@@ -3543,7 +3543,7 @@ exports.GetStockEntries = async (req, res) => {
       include: [
         {
           association: 'productVariant',
-          attributes: ['id', 'weight_per_unit', 'weight_per_pack'],
+          attributes: ['id', 'weight_per_unit', 'weight_per_pack', 'quantity_per_pack'],
           include: [
             {
               association: 'masterUOM',
