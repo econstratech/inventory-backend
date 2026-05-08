@@ -661,6 +661,7 @@ exports.GetBOMReport = async (req, res) => {
             pse.sale_order_recieved,
             w.id as warehouse_id,
             w.name as warehouse_name,
+            pse_rm.warehouse_id as rm_warehouse_id,
             rmp.id as raw_material_id,
             rmp.product_name as raw_material_name,
             rmp.product_code as raw_material_code,
@@ -668,8 +669,8 @@ exports.GetBOMReport = async (req, res) => {
             /* INVENTORY NEEDED */
             (
                 (
-                    pse_fp.buffer_size
-                    + (pse_fp.buffer_size * 0.005)
+                    pse.buffer_size
+                    + (pse.buffer_size * 0.005)
                     + pse.sale_order_recieved
                 )
                 -
@@ -683,23 +684,30 @@ exports.GetBOMReport = async (req, res) => {
         const joiningAndConditions = `FROM product_stock_entries pse
             INNER JOIN master_bom mb ON mb.final_product_id = pse.product_id
             INNER JOIN product fp ON fp.id = pse.product_id
-            INNER JOIN product rmp ON rmp.id = mb.raw_material_product_id 
-            LEFT JOIN product_stock_entries pse_fp ON pse_fp.product_id = fp.id 
-            LEFT JOIN product_stock_entries pse_rm ON pse_rm.product_id = rmp.id
-            LEFT JOIN warehouses w_rm ON w_rm.id = pse_rm.warehouse_id
+            INNER JOIN product rmp ON rmp.id = mb.raw_material_product_id
+            LEFT JOIN (
+                SELECT pse_rm_x.product_id,
+                       SUM(pse_rm_x.quantity) AS quantity,
+                       MAX(pse_rm_x.warehouse_id) AS warehouse_id
+                FROM product_stock_entries pse_rm_x
+                INNER JOIN warehouses w_rm
+                    ON w_rm.id = pse_rm_x.warehouse_id AND w_rm.is_rm_store = 1
+                WHERE pse_rm_x.deleted_at IS NULL
+                GROUP BY pse_rm_x.product_id
+            ) pse_rm ON pse_rm.product_id = rmp.id
             LEFT JOIN master_product_types mpt ON mpt.id = fp.product_type_id
             LEFT JOIN warehouses w ON w.id = pse.warehouse_id
 
             WHERE pse.company_id = :companyId
-            AND w.is_fg_store = 1 AND w_rm.is_rm_store = 1
+            AND w.is_fg_store = 1
             AND pse.deleted_at IS NULL
             AND mb.deleted_at IS NULL
             AND ${bomWhereSQL}
             /* INVENTORY NEEDED FILTER */
             AND (
                 (
-                    pse_fp.buffer_size
-                    + (pse_fp.buffer_size * 0.005)
+                    pse.buffer_size
+                    + (pse.buffer_size * 0.005)
                     + pse.sale_order_recieved
                 )
                 -
@@ -760,6 +768,8 @@ exports.GetBOMReport = async (req, res) => {
                 inventory_at_transit: row.inventory_at_transit,
                 sale_order_recieved: row.sale_order_recieved,
                 inventory_needed: row.inventory_needed,
+                fg_store_id: row.warehouse_id,
+                rm_store_id: row.rm_warehouse_id,
                 warehouse: row.warehouse_id ? {
                     id: row.warehouse_id,
                     name: row.warehouse_name
