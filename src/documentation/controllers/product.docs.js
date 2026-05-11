@@ -1870,6 +1870,86 @@
 
 /**
  * @swagger
+ * /api/product/stock-entries/bulk-delete:
+ *   post:
+ *     summary: Bulk delete product stock entries by product variant IDs
+ *     description: |
+ *       Permanently deletes rows from `product_stock_entries` matching the provided `product_variant_ids`. Scoped to the authenticated user's company. The delete is permanent (paranoid soft-delete is bypassed via `force: true`) and cannot be restored.
+ *     tags: [Product]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - product_variant_ids
+ *             properties:
+ *               product_variant_ids:
+ *                 type: array
+ *                 description: Array of product variant IDs whose stock entries should be permanently deleted
+ *                 minItems: 1
+ *                 items:
+ *                   type: integer
+ *                 example: [12, 34, 56]
+ *     responses:
+ *       200:
+ *         description: Stock entries deleted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "3 stock entries deleted successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     deleted_count:
+ *                       type: integer
+ *                       description: Number of stock entry rows permanently deleted
+ *                       example: 3
+ *       400:
+ *         description: Missing or invalid product_variant_ids
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "product_variant_ids must be a non-empty array of IDs"
+ *       401:
+ *         description: Missing or invalid auth token
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error deleting product stock entries"
+ *                 error:
+ *                   type: string
+ *                   example: "Database connection error"
+ */
+
+/**
+ * @swagger
  * /api/product/stock-entries/{id}:
  *   get:
  *     summary: Get a specific stock entry by ID

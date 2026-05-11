@@ -311,7 +311,13 @@
  *         schema:
  *           type: string
  *           enum: ["true", "false"]
- *         description: When "true", only return finished goods stores (is_fg_store = 1)
+ *         description: Filter by finished-goods store flag. "true" → only stores where is_fg_store = 1; "false" → only stores where is_fg_store = 0. Omit to skip this filter.
+ *       - in: query
+ *         name: cwhrm
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: Filter by raw-material store flag. "true" → only stores where is_rm_store = 1; "false" → only stores where is_rm_store = 0. Omit to skip this filter.
  *     responses:
  *       200:
  *         description: List of warehouses

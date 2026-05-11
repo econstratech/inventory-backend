@@ -3103,6 +3103,7 @@ const BULK_STOCK_HEADERS = {
   WEIGHT_PER_UNIT: 'Weight Per Unit',
   QUANTITY: 'Quantity',
   BUFFER_SIZE: 'Buffer Size',
+  MASTER_PACK_QUANTITY: 'Master Pack Quantity',
 };
 
 /** Get value from row */
@@ -3115,9 +3116,12 @@ const getValue = (row, key) => {
 
 /**
  * Bulk add to stock from CSV file.
- * Headers: Product Code, Store Name, UOM, Weight Per Unit, Quantity, Buffer Size.
+ * Headers: Product Code, Store Name, UOM, Weight Per Unit, Quantity, Buffer Size, [Master Pack Quantity].
  * Resolves product_variant_id using (product_id, uom, weight_per_unit).
- * If (product_id, warehouse_id, product_variant_id) exists: update quantity (add to existing). Otherwise create new ProductStockEntry.
+ * If (product_id, warehouse_id, product_variant_id) exists: override quantity with the CSV-resolved value. Otherwise create new ProductStockEntry.
+ * When "Master Pack Quantity" column is present and variant.quantity_per_pack > 0,
+ * the row quantity is computed as variant.quantity_per_pack * master_pack_quantity;
+ * otherwise it falls back to the CSV Quantity column.
  * Optimized for 200+ rows: batch lookups, bulk create, batched updates.
  */
 exports.BulkAddToStock = async (req, res) => {
@@ -3154,25 +3158,37 @@ exports.BulkAddToStock = async (req, res) => {
        ----------------------------------------------------- */
 
     const isVariantBased = req.user.is_variant_based;
+    const hasMasterPackHeader = Object.keys(rows[0] || {}).some(
+      k => k.trim().toLowerCase() === BULK_STOCK_HEADERS.MASTER_PACK_QUANTITY.toLowerCase()
+    );
     const aggregated = new Map();
 
     for (const row of rows) {
       const product_code = String(getValue(row, BULK_STOCK_HEADERS.PRODUCT_CODE) || '').trim();
       const store_name = String(getValue(row, BULK_STOCK_HEADERS.STORE_NAME) || '').trim();
       const quantityRaw = getValue(row, BULK_STOCK_HEADERS.QUANTITY);
-      const quantity = Number(String(quantityRaw || '').replace(/,/g, '').trim());
+      const quantityStr = String(quantityRaw || '').replace(/,/g, '').trim();
+      const quantity = quantityStr === '' ? 0 : Number(quantityStr);
+
+      const masterPackRaw = hasMasterPackHeader
+        ? getValue(row, BULK_STOCK_HEADERS.MASTER_PACK_QUANTITY)
+        : 0;
+      const masterPackStr = String(masterPackRaw || '').replace(/,/g, '').trim();
+      const master_pack_quantity = masterPackStr === '' ? 0 : Number(masterPackStr);
 
       const uom = String(row[BULK_STOCK_HEADERS.UOM] || '').trim();
       const weight_per_unit = Number(row[BULK_STOCK_HEADERS.WEIGHT_PER_UNIT] || 0);
       const buffer_size = Number(row[BULK_STOCK_HEADERS.BUFFER_SIZE] || 0);
 
+      // When master pack header is present, Quantity column is optional per row
+      // (empty quantity is treated as 0, master_pack_quantity drives the value).
       if (
         !product_code ||
         !store_name ||
         (!uom && isVariantBased) ||
         (isVariantBased && !weight_per_unit) ||
-        isNaN(quantity) ||
-        quantity < 0
+        isNaN(quantity) || quantity < 0 ||
+        isNaN(master_pack_quantity) || master_pack_quantity < 0
       ) continue;
 
       const key = isVariantBased
@@ -3180,11 +3196,12 @@ exports.BulkAddToStock = async (req, res) => {
       : `${product_code}__${store_name}`;
 
       if (!aggregated.has(key)) {
-        aggregated.set(key, { quantity: 0, buffer_size });
+        aggregated.set(key, { quantity: 0, master_pack_quantity: 0, buffer_size });
       }
 
       const entry = aggregated.get(key);
       entry.quantity += quantity;
+      entry.master_pack_quantity += master_pack_quantity;
       entry.buffer_size = buffer_size; // last value wins
       entry.uom = isVariantBased ? uom : null;
       entry.weight_per_unit = isVariantBased ? weight_per_unit : null;
@@ -3206,6 +3223,7 @@ exports.BulkAddToStock = async (req, res) => {
         store_name: parts[1],
         uom: isVariantBased ? parts[2] : null,
         weight_per_unit: isVariantBased ? Number(parts[3]) : null,
+        master_pack_quantity: 0,
         ...val,
       };
     });
@@ -3268,7 +3286,7 @@ exports.BulkAddToStock = async (req, res) => {
               uom_id: uomIds,
               weight_per_unit: weight_per_units,
             },
-            attributes: ['id', 'product_id', 'uom_id', 'weight_per_unit'],
+            attributes: ['id', 'product_id', 'uom_id', 'weight_per_unit', 'quantity_per_pack'],
             raw: true,
           })
         : [];
@@ -3276,7 +3294,7 @@ exports.BulkAddToStock = async (req, res) => {
     const variantMap = isVariantBased ? new Map(
       variants.map(v => [
         `${v.product_id}_${v.uom_id}_${Number(v.weight_per_unit)}`,
-        v.id,
+        { id: v.id, quantity_per_pack: v.quantity_per_pack },
       ])
     ) : new Map();
 
@@ -3312,25 +3330,39 @@ exports.BulkAddToStock = async (req, res) => {
       }
     
       let product_variant_id = null;
-    
+      let variant_quantity_per_pack = null;
+
       if (isVariantBased) {
         const variantKey = `${product_id}_${uom_id}_${Number(r.weight_per_unit)}`;
-        product_variant_id = variantMap.get(variantKey);
-    
-        if (!product_variant_id) {
+        const variant = variantMap.get(variantKey);
+
+        if (!variant) {
           errors.push({
             ...r,
             reason: 'Product variant not found for UOM and Weight Per Unit',
           });
           continue;
         }
+        product_variant_id = variant.id;
+        variant_quantity_per_pack = variant.quantity_per_pack;
       }
-    
+
+      // Resolve final quantity. When Master Pack Quantity column is present and
+      // variant.quantity_per_pack is set, quantity = quantity_per_pack * master_pack_quantity.
+      // Otherwise fall back to the Quantity column value.
+      let finalQuantity = r.quantity;
+      if (hasMasterPackHeader && r.master_pack_quantity > 0) {
+        if (variant_quantity_per_pack != null && Number(variant_quantity_per_pack) > 0) {
+          finalQuantity = Number(variant_quantity_per_pack) * r.master_pack_quantity;
+        }
+      }
+
       resolved.push({
         product_id,
         warehouse_id,
         product_variant_id, // will be null if not variant-based
         ...r,
+        quantity: finalQuantity,
       });
     }
 
@@ -3380,9 +3412,11 @@ exports.BulkAddToStock = async (req, res) => {
       const found = existingMap.get(key);
 
       if (found) {
+        // Override stock with the CSV-resolved value (master pack calc or CSV Quantity),
+        // rather than adding to the existing stock.
         toUpdate.push({
           id: found.id,
-          quantity: found.quantity + r.quantity,
+          quantity: r.quantity,
           buffer_size: r.buffer_size,
         });
       } else {
@@ -3861,6 +3895,47 @@ exports.DeleteStockEntry = async (req, res) => {
   catch (error) {
     console.error("Delete stock entry by id error:", error);
     return res.status(500).json({ status: false, message: "Error deleting stock entry by id", error: error.message });
+  }
+};
+
+/**
+ * Permanently delete product stock entries for the given product variant IDs.
+ * Scoped to the user's company. Uses force: true to bypass paranoid soft-delete.
+ * @param {Object} req
+ * @param {number[]} req.body.product_variant_ids
+ * @param {Object} res
+ */
+exports.BulkDeleteProductStock = async (req, res) => {
+  try {
+    const { product_variant_ids } = req.body || {};
+
+    if (!Array.isArray(product_variant_ids) || product_variant_ids.length === 0) {
+      return res.status(400).json({
+        status: false,
+        message: 'product_variant_ids must be a non-empty array of IDs',
+      });
+    }
+
+    const deletedCount = await ProductStockEntry.destroy({
+      where: {
+        product_variant_id: product_variant_ids,
+        company_id: req.user.company_id,
+      },
+      force: true,
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: `${deletedCount} stock ${deletedCount === 1 ? 'entry' : 'entries'} deleted successfully`,
+      data: { deleted_count: deletedCount },
+    });
+  } catch (error) {
+    console.error('BulkDeleteProductStock error:', error);
+    return res.status(500).json({
+      status: false,
+      message: 'Error deleting product stock entries',
+      error: error.message,
+    });
   }
 };
 
