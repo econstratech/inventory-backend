@@ -35,6 +35,7 @@ const {
     ExportStockEntries,
     GetStockEntriesById,
     DeleteStockEntry,
+    BulkDeleteProductStock,
     GetStoreWiseStock,
     UpdateStockEntry,
     GetIndentRequiredProducts,
@@ -59,6 +60,7 @@ router.get('/stock-entries', authToken, GetStockEntries);
 router.get('/stock-entries/export', authToken, ExportStockEntries);
 router.get("/indent-required-products", authToken, GetIndentRequiredProducts);
 
+router.post('/stock-entries/bulk-delete', authToken, BulkDeleteProductStock);
 router.get('/stock-entries/:id', authToken, GetStockEntriesById);
 router.put('/stock-entries/:id', authToken, UpdateStockEntry);
 router.delete('/stock-entries/:id', authToken, DeleteStockEntry);

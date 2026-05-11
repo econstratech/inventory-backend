@@ -733,6 +733,7 @@ exports.GetMaterialListWithoutBOMForWorkOrder = async (req, res) => {
         // get the raw material store ids
         const rm_store_ids = rm_stores.map(store => store.id);
         // console.log("rm_store_ids", rm_store_ids);
+        // console.log("FG ID", workOrder.product_id);
         // get the BOM list for the work order
         const materialList = await WorkOrderMaterialMapping.findAll({
             attributes: ['id', 'rm_product_id'],
@@ -758,7 +759,7 @@ exports.GetMaterialListWithoutBOMForWorkOrder = async (req, res) => {
                                 },
                                 {
                                     association: 'productVariant',
-                                    attributes: ['id', 'weight_per_unit', 'weight_per_pack'],
+                                    attributes: ['id', 'weight_per_unit', 'weight_per_pack', 'quantity_per_pack'],
                                     include: [
                                         {
                                             association: 'masterUOM',
@@ -1114,6 +1115,196 @@ exports.CompleteMaterialIssue = async (req, res) => {
         // rollback the transaction
         await transaction.rollback();
         return res.status(400).json({ status: false, message: "Error completing material issue", error: error.message });
+    }
+}
+
+/**
+ * Register multiple raw-material issues for a work order in a single call.
+ * Combines the per-row logic of CreateMaterialIssue with optional completion
+ * (CompleteMaterialIssue) when `is_complete` is true.
+ *
+ * Each raw_materials entry carries an `id`:
+ *   - id != null → updates the existing work_order_material_issue row with that id
+ *                  (scoped to this wo_id for safety).
+ *   - id == null → creates a new work_order_material_issue row.
+ * After all writes, material_issue_percent is recomputed across every issue for
+ * the work order (per-RM UOM-aware for variant-based companies, simple ratio
+ * otherwise), and the work order status is bumped 1 → 2 if any new issue was
+ * created. When is_complete = true, status is set to 3 and material_issued_by /
+ * material_issued_at are stamped.
+ *
+ * @param {Object} req
+ * @param {number}  req.body.wo_id
+ * @param {boolean} req.body.is_complete
+ * @param {Array<{
+ *   id: number | null,
+ *   rm_product_id: number,
+ *   rm_product_variant_id?: number,
+ *   issued_qty: number,
+ *   batch_id?: number,
+ *   warehouse_id?: number
+ * }>} req.body.raw_materials
+ * @param {Object} res
+ */
+exports.BulkMaterialIssue = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { wo_id, is_complete, raw_materials } = req.body || {};
+
+        if (!wo_id) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "wo_id is required" });
+        }
+        if (!Array.isArray(raw_materials) || raw_materials.length === 0) {
+            await transaction.rollback();
+            return res.status(400).json({ status: false, message: "raw_materials must be a non-empty array" });
+        }
+
+        const isVariantBased = req.user.is_variant_based;
+        const companyId = req.user.company_id;
+        const completeIssue = is_complete === true || is_complete === 'true';
+
+        // Load work order with FG variant + UOM (needed for percent calculation).
+        const workOrder = await WorkOrder.findOne({
+            attributes: ['id', 'product_id', 'final_product_variant_id', 'planned_qty', 'status'],
+            where: { id: wo_id },
+            include: isVariantBased ? [{
+                association: 'finalProductVariant',
+                attributes: ['id', 'weight_per_unit'],
+                include: [{ association: 'masterUOM', attributes: ['id', 'label'] }],
+            }] : [],
+            transaction,
+        });
+        if (!workOrder) {
+            await transaction.rollback();
+            return res.status(404).json({ status: false, message: "Work order not found" });
+        }
+
+        // Each raw_materials entry carries an `id`:
+        //   id != null → update the existing work_order_material_issue with that id
+        //                (scoped to this wo_id, so a client cannot cross-update another WO).
+        //   id == null → create a new work_order_material_issue row.
+        const issuedIds = [];
+        let anyNewlyCreated = false;
+
+        for (const rm of raw_materials) {
+            const { id, rm_product_id, rm_product_variant_id, issued_qty, batch_id, warehouse_id } = rm || {};
+            const qty = Number(issued_qty);
+            if (!rm_product_id || issued_qty == null || Number.isNaN(qty) || qty < 0) continue;
+
+            if (id != null) {
+                const [updatedCount] = await WorkOrderMaterialIssue.update({
+                    rm_product_id,
+                    rm_product_variant_id: rm_product_variant_id || null,
+                    issued_qty: qty,
+                    batch_id: batch_id || null,
+                    warehouse_id: warehouse_id || null,
+                }, { where: { id, wo_id }, transaction });
+                if (updatedCount > 0) {
+                    issuedIds.push(id);
+                }
+                // If id didn't match (e.g. stale client state), skip silently — the
+                // row simply isn't applied. A future enhancement could surface this.
+            } else {
+                const created = await WorkOrderMaterialIssue.create({
+                    company_id: companyId,
+                    wo_id,
+                    rm_product_id,
+                    rm_product_variant_id: rm_product_variant_id || null,
+                    issued_qty: qty,
+                    batch_id: batch_id || null,
+                    warehouse_id: warehouse_id || null,
+                }, { transaction });
+                issuedIds.push(created.id);
+                anyNewlyCreated = true;
+            }
+        }
+
+        // Recompute material_issue_percent across every issue for this WO.
+        let materialIssuePercent = 0;
+        const plannedQty = Number(workOrder.planned_qty) || 0;
+
+        if (isVariantBased && workOrder.finalProductVariant && plannedQty > 0) {
+            const fgWPU = Number(workOrder.finalProductVariant.weight_per_unit) || 0;
+            const fgUOM = workOrder.finalProductVariant.masterUOM?.label || null;
+
+            const allIssues = await WorkOrderMaterialIssue.findAll({
+                where: { wo_id },
+                attributes: ['rm_product_variant_id', 'issued_qty'],
+                raw: true,
+                transaction,
+            });
+            const variantIds = [...new Set(allIssues.map(i => i.rm_product_variant_id).filter(Boolean))];
+            const variantMap = new Map();
+            if (variantIds.length) {
+                const variants = await ProductVariant.findAll({
+                    where: { id: variantIds, company_id: companyId },
+                    attributes: ['id', 'weight_per_unit'],
+                    include: [{ association: 'masterUOM', attributes: ['id', 'label'] }],
+                    transaction,
+                });
+                for (const v of variants) {
+                    variantMap.set(v.id, {
+                        wpu: Number(v.weight_per_unit) || 0,
+                        uom: v.masterUOM?.label || null,
+                    });
+                }
+            }
+            // Convert to a common base unit (grams/ml) using the kg → 1000 heuristic
+            // from CreateMaterialIssue. For non-kg labels, keep value as-is.
+            const toBase = (qty, wpu, uom) => Number(qty) * Number(wpu) * (uom === 'kg' ? 1000 : 1);
+            let totalIssuedBase = 0;
+            for (const issue of allIssues) {
+                const v = issue.rm_product_variant_id ? variantMap.get(issue.rm_product_variant_id) : null;
+                totalIssuedBase += v && v.wpu > 0
+                    ? toBase(issue.issued_qty, v.wpu, v.uom)
+                    : Number(issue.issued_qty);
+            }
+            const plannedFGBase = toBase(plannedQty, fgWPU, fgUOM);
+            if (plannedFGBase > 0) {
+                materialIssuePercent = Math.ceil((totalIssuedBase / plannedFGBase) * 100);
+            }
+        } else if (plannedQty > 0) {
+            const totalIssued = await WorkOrderMaterialIssue.sum('issued_qty', {
+                where: { wo_id },
+                transaction,
+            }) || 0;
+            materialIssuePercent = (Number(totalIssued) / plannedQty) * 100;
+        }
+
+        // Update work order: percent, status bump, and (optional) completion stamps.
+        const woPayload = { material_issue_percent: materialIssuePercent };
+        if (anyNewlyCreated && workOrder.status === 1) {
+            woPayload.status = 2; // 1 → 2 (In-Progress) on first new issue, mirrors CreateMaterialIssue
+        }
+        if (completeIssue) {
+            woPayload.status = 3; // 3: Material Issued
+            woPayload.material_issued_by = req.user.id;
+            woPayload.material_issued_at = new Date();
+        }
+
+        await WorkOrder.update(woPayload, { where: { id: wo_id }, transaction });
+
+        await transaction.commit();
+        return res.status(200).json({
+            status: true,
+            message: completeIssue
+                ? "Bulk material issue created and marked as completed"
+                : "Bulk material issue created successfully",
+            data: {
+                ids: issuedIds,
+                material_issue_percent: materialIssuePercent,
+                is_complete: completeIssue,
+            },
+        });
+    } catch (error) {
+        console.error("Error in bulk material issue:", error);
+        await transaction.rollback();
+        return res.status(400).json({
+            status: false,
+            message: "Error processing bulk material issue",
+            error: error.message,
+        });
     }
 }
 

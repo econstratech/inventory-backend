@@ -9,6 +9,7 @@ const {
     CreateMaterialIssue,
     DeleteMaterialIssue,
     CompleteMaterialIssue,
+    BulkMaterialIssue,
     SaveProductionData,
     GetWorkOrderById,
     UpdateWorkOrder,
@@ -43,6 +44,7 @@ router.get('/bom-list/:wo_id', authToken, GetBOMListForWorkOrder);
 router.post('/material-issue', authToken, CreateMaterialIssue);
 router.delete('/material-issue/:id', authToken, DeleteMaterialIssue);
 router.post('/material-issue-complete', authToken, CompleteMaterialIssue);
+router.post('/bulk-material-issue', authToken, BulkMaterialIssue);
 router.post('/save-production-data', authToken, SaveProductionData);
 router.post('/complete-production', authToken, CompleteProduction);
 

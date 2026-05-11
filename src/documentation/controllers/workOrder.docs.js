@@ -1737,6 +1737,156 @@
 
 /**
  * @swagger
+ * /api/production/work-order/bulk-material-issue:
+ *   post:
+ *     summary: Bulk register raw-material issues for a work order
+ *     description: |
+ *       Combines the per-row behaviour of `/material-issue` with the optional completion behaviour of `/material-issue-complete` in a single call.
+ *
+ *       Each entry in `raw_materials` carries an `id`:
+ *         - `id != null` → updates the existing `work_order_material_issue` row with that id (scoped to this `wo_id`, so a client cannot cross-update another work order).
+ *         - `id == null` → creates a new `work_order_material_issue` row.
+ *
+ *       After all writes, `material_issue_percent` is recomputed across every issue for the work order. For variant-based companies the percentage is computed in a common base unit (kg values are scaled to grams via the same heuristic as `/material-issue`) using each RM variant's `weight_per_unit` and UOM label. The work order status is bumped from `1` (Pending Material Issue) to `2` (In-Progress) if at least one new issue was created.
+ *
+ *       When `is_complete = true`, the work order is additionally moved to `status = 3` (Material Issued) and `material_issued_by` / `material_issued_at` are stamped — equivalent to also calling `/material-issue-complete`.
+ *     tags: [Production]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - wo_id
+ *               - raw_materials
+ *             properties:
+ *               wo_id:
+ *                 type: integer
+ *                 description: Work order ID
+ *                 example: 101
+ *               is_complete:
+ *                 type: boolean
+ *                 description: When true, also marks the work order's material issue as completed (status = 3, material_issued_by / material_issued_at stamped).
+ *                 default: false
+ *                 example: false
+ *               raw_materials:
+ *                 type: array
+ *                 description: Raw materials to register. `id != null` updates the existing row with that id; `id == null` creates a new row.
+ *                 minItems: 1
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - id
+ *                     - rm_product_id
+ *                     - issued_qty
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Existing `work_order_material_issue` row id when updating an existing entry; `null` when creating a new entry.
+ *                       example: 10
+ *                     rm_product_id:
+ *                       type: integer
+ *                       description: Raw material product ID
+ *                       example: 500
+ *                     rm_product_variant_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Raw material variant ID (required for variant-based companies)
+ *                       example: 12
+ *                     issued_qty:
+ *                       type: number
+ *                       description: Issued quantity for this raw material (must be non-negative)
+ *                       example: 25
+ *                     batch_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Receive-batch ID when issue is from a specific batch
+ *                       example: 890
+ *                     warehouse_id:
+ *                       type: integer
+ *                       nullable: true
+ *                       description: Source warehouse for this issue
+ *                       example: 7
+ *           example:
+ *             wo_id: 101
+ *             is_complete: false
+ *             raw_materials:
+ *               - id: 10
+ *                 rm_product_id: 500
+ *                 rm_product_variant_id: 12
+ *                 issued_qty: 25
+ *                 batch_id: 890
+ *               - id: null
+ *                 rm_product_id: 501
+ *                 rm_product_variant_id: 14
+ *                 issued_qty: 8
+ *     responses:
+ *       200:
+ *         description: Bulk material issue processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Bulk material issue created successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     ids:
+ *                       type: array
+ *                       description: IDs of the `work_order_material_issue` rows created or updated (in the same order as the input `raw_materials`).
+ *                       items:
+ *                         type: integer
+ *                       example: [42, 43]
+ *                     material_issue_percent:
+ *                       type: number
+ *                       description: Recomputed material issue percentage for the work order after the upserts.
+ *                       example: 64
+ *                     is_complete:
+ *                       type: boolean
+ *                       description: Whether the work order was also marked as material-issued (status 3) by this call.
+ *                       example: false
+ *       400:
+ *         description: Missing/invalid payload, or error during processing
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "raw_materials must be a non-empty array"
+ *                 error:
+ *                   type: string
+ *       404:
+ *         description: Work order not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Work order not found"
+ */
+
+/**
+ * @swagger
  * /api/production/work-order/complete-production:
  *   post:
  *     summary: Mark work order production as completed
