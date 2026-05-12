@@ -119,10 +119,8 @@ exports.AddSellQuotation = async (req, res) => {
         );
 
         // update the stock entry (increase quantity & decrease sale_order_recieved)
-        if (req.body.send_to_management) {
+        if (req.body.send_to_floor_manager) {
           await updateStockEntry(sellQuotationData.id, sellQuotationData.warehouse_id, product.product_id, product.variant_id, productQuantity, 9, userId, transaction);
-        } else if (req.body.send_to_floor_manager) {
-          await updateStockEntry(sellQuotationData.id, sellQuotationData.warehouse_id, product.product_id, product.variant_id, productQuantity, 10, userId, transaction);
         }
       });
 
@@ -4283,8 +4281,12 @@ const updateStockEntry = async (sales_id, warehouse_id, product_id, product_vari
       }, { ...(transaction ? { transaction } : {}) });
 
       // Subtract sale order recieved quantity from the stock entry
+      let updatedSaleOrderRecieved = stockEntry.sale_order_recieved;
+      if (stockEntry.sale_order_recieved > 0) {
+        updatedSaleOrderRecieved -= received_quantity;
+      }
       await ProductStockEntry.update({
-        sale_order_recieved: stockEntry.sale_order_recieved - received_quantity,
+        sale_order_recieved: updatedSaleOrderRecieved,
         quantity: stockEntry.quantity - received_quantity,
       }, { 
         where: { id: stockEntry.id },
