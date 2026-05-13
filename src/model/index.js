@@ -56,6 +56,7 @@ const ProductionActuals = require('./ProductionActuals');
 const WorkOrderMaterialMapping = require('./WorkOrderMaterialMapping');
 const WorkOrderDispatchBatch = require('./WorkOrderDispatchBatch');
 const BarcodeSettings = require('./BarcodeSettings');
+const UserActivityLog = require('./UserActivityLog');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -433,6 +434,9 @@ WorkOrderDispatchBatch.belongsTo(Company, { foreignKey: 'company_id', as: 'compa
 WorkOrderDispatchBatch.hasOne(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
 WorkOrderDispatchBatch.belongsTo(WorkOrderDispatchLog, { foreignKey: 'dispatch_log_id', as: 'dispatchLog' });
 
+UserActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+UserActivityLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+
 module.exports = {
     Module,
     Role,
@@ -487,5 +491,6 @@ module.exports = {
     ProductionActuals,
     WorkOrderMaterialMapping,
     WorkOrderDispatchBatch,
-    BarcodeSettings
+    BarcodeSettings,
+    UserActivityLog
 };

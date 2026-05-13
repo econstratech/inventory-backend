@@ -1002,7 +1002,7 @@ exports.CreateMaterialIssue = async (req, res) => {
             materialIssuePercent = ((Number(totalIssuedQty) + Number(issued_qty)) / Number(workOrder.planned_qty)) * 100;
         }
 
-        workOrderPayload.material_issue_percent = materialIssuePercent;
+        workOrderPayload.material_issue_percent = materialIssuePercent > 100 ? 100 : materialIssuePercent;
 
 
         // if the material issue already exists, then update the material issue
@@ -1102,7 +1102,7 @@ exports.CompleteMaterialIssue = async (req, res) => {
         const { wo_id } = req.body;
         await WorkOrder.update({
             status: 3, // 3: Material Issued
-            // material_issue_percent: 100, // 100% material issued when material issue is completed
+            material_issue_percent: 100, // 100% material issued when material issue is completed
             material_issued_by: req.user.id,
             material_issued_at: new Date(),
         }, {
@@ -1273,7 +1273,7 @@ exports.BulkMaterialIssue = async (req, res) => {
         }
 
         // Update work order: percent, status bump, and (optional) completion stamps.
-        const woPayload = { material_issue_percent: materialIssuePercent };
+        const woPayload = { material_issue_percent: materialIssuePercent > 100 ? 100 : materialIssuePercent };
         if (anyNewlyCreated && workOrder.status === 1) {
             woPayload.status = 2; // 1 → 2 (In-Progress) on first new issue, mirrors CreateMaterialIssue
         }
@@ -1316,8 +1316,10 @@ exports.BulkMaterialIssue = async (req, res) => {
  */
 exports.SaveProductionData = async (req, res) => {
     try {
+        const productionWithoutBOM = req.user.production_without_bom === 1;
         // validate the input and output quantities
-        const { wo_id, wo_step_id, input_qty, output_qty, uom_id, status } = req.body;
+        const { wo_id, wo_step_id, input_qty, output_qty, waste_qty, uom_id, status } = req.body;
+
         if (!input_qty || !output_qty) {
             return res.status(400).json({ status: false, message: "Input quantity and output quantity are required" });
         } else if (input_qty < 0 || output_qty < 0) {
@@ -1355,7 +1357,7 @@ exports.SaveProductionData = async (req, res) => {
         });
 
         // calculate the waste quantity and yield percentage
-        const waste_qty = input_qty - output_qty;
+        // const waste_qty = input_qty - output_qty;
         const yield_percent = (output_qty / input_qty) * 100;
 
         let stepStatus = status;
@@ -1368,7 +1370,7 @@ exports.SaveProductionData = async (req, res) => {
             uom_id: uom_id,
             input_qty: input_qty,
             output_qty: output_qty,
-            waste_qty: waste_qty,
+            waste_qty: waste_qty ?? 0,
             yield_percent: yield_percent,
             status: stepStatus,
         }, {
@@ -1423,7 +1425,7 @@ exports.SaveProductionData = async (req, res) => {
  */
 exports.CompleteProduction = async (req, res) => {
     try {
-        const { wo_id, final_qty = 0 } = req.body;
+        const { wo_id, final_qty = 0, final_waste_qty = 0 } = req.body;
         if (wo_id == null || wo_id === "") {
             return res.status(400).json({ status: false, message: "wo_id is required" });
         }
@@ -1433,11 +1435,13 @@ exports.CompleteProduction = async (req, res) => {
         }
 
         await WorkOrder.update(
-            { 
+            {
                 status: 4,
                 final_qty,
+                final_waste_qty,
                 production_completed_at: new Date(),
                 production_completed_by: req.user.id,
+                material_issue_percent: 100, // Ensure material issue is marked as 100% when production is completed
             },
             { where: { id, company_id: req.user.company_id } }
         );

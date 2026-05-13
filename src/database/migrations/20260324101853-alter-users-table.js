@@ -19,21 +19,11 @@ exports.up = function(db) {
     type: 'string',
     length: 50,
     allowNull: true
-  })
-  .then(() => {
-    return db.createTable('user_activity_logs', {
-      id: { type: 'bigint', primaryKey: true, autoIncrement: true },
-      user_id: { type: 'bigint', unsigned: true, allowNull: false, foreignKey: { name: 'fk_user_activity_log_user', table: 'users', rules: { onDelete: 'CASCADE', onUpdate: 'RESTRICT' }, mapping: 'id' } },
-      activity: { type: 'string', allowNull: false },
-      activity_data: { type: 'json', allowNull: true },
-      created_at: { type: 'datetime', allowNull: false, defaultValue: new String('CURRENT_TIMESTAMP') },
-      updated_at: { type: 'datetime', allowNull: false, defaultValue: new String('CURRENT_TIMESTAMP') },
-    });
   });
 };
 
 exports.down = function(db) {
-  return db.dropTable('user_activity_logs');
+  return null;
 };
 
 exports._meta = {

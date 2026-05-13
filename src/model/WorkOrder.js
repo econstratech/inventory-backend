@@ -51,6 +51,10 @@ const WorkOrder = sequelize.define('work_orders', {
         type: DataTypes.INTEGER,
         allowNull: true,
     },
+    final_waste_qty: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
     due_date: {
         type: DataTypes.DATE,
         allowNull: false,
