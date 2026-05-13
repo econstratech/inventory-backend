@@ -154,6 +154,7 @@ exports.Login = async (req, res) => {
                                 'min_sale_amount',
                                 'is_variant_based',
                                 'is_production_planning',
+                                'is_gst_enabled',
                                 'production_without_bom',
                                 'has_master_pack'
                             ],

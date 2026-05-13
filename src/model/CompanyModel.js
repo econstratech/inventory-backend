@@ -117,7 +117,12 @@ const GeneralSettings = sequelize.define(
       type: DataTypes.SMALLINT,
       allowNull: true,
       defaultValue: 0,
-    }
+    },
+    is_gst_enabled: {
+      type: DataTypes.SMALLINT,
+      allowNull: true,
+      defaultValue: 1,
+    },
   },
   {
     tableName: "general_settings",

@@ -90,7 +90,8 @@ exports.GetActiveCompany = async (req, res) => {
                     'is_variant_based',
                     'has_master_pack',
                     'is_production_planning',
-                    'production_without_bom'
+                    'production_without_bom',
+                    'is_gst_enabled'
                 ],
             }
         ]
@@ -153,6 +154,7 @@ exports.GetCompanyDetails = async (req, res) => {
                         'is_variant_based',
                         'has_master_pack',
                         'is_production_planning',
+                        'is_gst_enabled',
                         'production_without_bom'
                     ],
                 }
@@ -255,29 +257,41 @@ exports.CreateCompany = async (req, res) => {
     let transaction = null;
     try {
         // sanitize the request body
-        const { 
-            company_name, 
+        const {
+            company_name,
             company_email,
             owner_name,
             owner_email,
-            company_phone, 
-            isd, 
-            address, 
-            whatsapp_number, 
-            w_isd = "+91", 
-            password, 
+            company_phone,
+            isd,
+            address,
+            whatsapp_number,
+            w_isd = "+91",
+            password,
             renew_date,
             contact_name,
             contact_email,
             contact_phone,
             contact_whatsapp_no,
-            is_variant_based
+            is_variant_based,
+            is_gst_enabled,
+            allowed_modules,
         } = req.body;
 
         // validate the request body
         if (!company_name || !company_email || !company_phone || !isd || !address || !whatsapp_number || !contact_phone) {
             return res.status(400).json({ msg: "Please fill all field" })
         }
+        if (!Array.isArray(allowed_modules) || allowed_modules.length === 0) {
+            return res.status(400).json({ msg: "Please select at least one module." })
+        }
+        const sanitizedAllowedModules = Array.from(
+            new Set(
+                allowed_modules
+                    .map((id) => Number(id))
+                    .filter((n) => Number.isFinite(n))
+            )
+        );
         // check if company already exists, if exists then return error
         const Existcompany = await Company.findOne({
             attributes: ['id'],
@@ -305,7 +319,8 @@ exports.CreateCompany = async (req, res) => {
             contact_phone: contact_phone ? contact_phone.trim() : null,
             p_isd: isd ?? '+91',
             whatsapp_number: contact_whatsapp_no ?? null,
-            w_isd: w_isd ?? '+91'
+            w_isd: w_isd ?? '+91',
+            allowed_modules: JSON.stringify(sanitizedAllowedModules),
         }, { transaction });
 
 
@@ -340,6 +355,7 @@ exports.CreateCompany = async (req, res) => {
         }, { transaction });
         await GeneralSettings.create({
             is_variant_based: is_variant_based ?? 1, // default is 1 for variant based
+            is_gst_enabled: is_gst_enabled ?? 1, // default is 1 for GST enabled
             timezone: 'Asia/Calcutta',
             currency_name: 'Indian Rupee',
             currency_code: 'INR',
@@ -417,6 +433,7 @@ exports.UpdateCompany = async (req, res) => {
             min_purchase_amount,
             min_sale_amount,
             is_production_planning,
+            is_gst_enabled,
             production_without_bom,
             allowed_modules,
         } = req.body || {};
@@ -509,6 +526,7 @@ exports.UpdateCompany = async (req, res) => {
             min_sale_amount: toDecimalOrNull(min_sale_amount),
             is_production_planning: toSmallInt(is_production_planning),
             production_without_bom: toSmallInt(production_without_bom) ?? 0, // not-null in schema
+            is_gst_enabled: toSmallInt(is_gst_enabled),
         };
 
         const existingSettings = await GeneralSettings.findOne({

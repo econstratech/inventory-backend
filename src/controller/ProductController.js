@@ -894,6 +894,7 @@ exports.GetAllProducts = async (req, res) => {
         "product_category_id",
         "product_name",
         "sku_product",
+        'product_price',
         "product_type_id",
         "is_batch_applicable",
         "has_master_pack",
@@ -1007,7 +1008,8 @@ exports.GetProductDetails = async (req, res) => {
         'brand_id', 
         'is_batch_applicable',
         'has_master_pack',
-        'markup_percentage'
+        'markup_percentage',
+        'product_price',
       ],
       where: {
         id: productId,
@@ -1358,6 +1360,7 @@ exports.BulkExportProducts = async (req, res) => {
       { key: "brand_name", label: "Brand" },
       { key: "is_batch_applicable", label: "Batch Product" },
       { key: "markup_percentage", label: "Markup Percentage" },
+      { key: "product_price", label: "Sale Amount" },
       { key: "uom", label: "UOM" },
       { key: "weight_per_unit", label: "Weight Per Unit" },
     ];
@@ -1431,7 +1434,8 @@ exports.BulkExportProducts = async (req, res) => {
         c.title AS category_name,
         pt.name AS product_type_name,
         b.name AS brand_name,
-        p.markup_percentage
+        p.markup_percentage,
+        p.product_price
         ${!isVariantBased ? ",base_uom.label AS uom_label" : ""}
         ${selectFieldsForVariants}
       FROM product p
@@ -3592,6 +3596,7 @@ exports.GetStockEntries = async (req, res) => {
             'product_name', 
             'sku_product', 
             'product_code',
+            'product_price',
             'is_batch_applicable',
           ],
           where: productWhere,

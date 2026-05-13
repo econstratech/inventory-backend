@@ -50,6 +50,7 @@ const { GeneralSettings } = require("../model/CompanyModel");
 const MasteruomModel = require("../model/MasteruomModel");
 const ProductCategories = require("../model/ProductCategory");
 const CommonHelper = require("../helpers/commonHelper");
+const { registerUserActivity } = require("../helpers/userActivityLogger");
 
 
 exports.AddSellQuotation = async (req, res) => {
@@ -161,8 +162,27 @@ exports.AddSellQuotation = async (req, res) => {
     // commit the transaction
     await transaction.commit();
 
+    await registerUserActivity({
+      req,
+      module: "sales",
+      action: "sale_order_create",
+      entityType: "Sale",
+      entityId: sellQuotationData.id,
+      entityReference: sellQuotationData.reference_number,
+      description: `Created sale order ${sellQuotationData.reference_number}`,
+      metadata: {
+        customer_id: req.body.customer_id,
+        warehouse_id: req.body.warehouse_id,
+        total_amount: req.body.total_amount,
+        untaxed_amount: req.body.untaxed_amount,
+        payment_terms: req.body.payment_terms,
+        product_count: Array.isArray(req.body.products) ? req.body.products.length : 0,
+        status: sellQuotationData.status,
+      },
+    });
+
     // Return the updated purchase data including total amount to the client
-    res.status(201).json({
+    return res.status(201).json({
       status: true,
       message: "Sell quotation created successfully",
     });
@@ -172,7 +192,7 @@ exports.AddSellQuotation = async (req, res) => {
       await transaction.rollback();
     }
     console.log("error in sell quotation creation", error);
-    res.status(500).json({
+    return res.status(500).json({
       status: false,
       message: "An error occurred while creating the sell quotation",
     });
@@ -1167,201 +1187,266 @@ exports.StatusUpdate = async (req, res) => {
 
 // receive sales product by floor manager
 exports.receiveSalesProduct = async (req, res) => {
-  const { 
-    sales_id, 
-    sales_product_id, 
+  const {
+    sales_id,
+    sales_product_id,
     product_id,
-    unit_price,
     product_variant_id,
-    quantity, 
-    warehouse_id
+    quantity,
+    warehouse_id,
+    unit_price,
+    order_quantity,
   } = req.body;
 
-  let transaction = null;
-  try {
-    // Get the sales product
-    // check if the company is variant based
-    const isVariantBased = req.user.is_variant_based; // true or false
-    const user_id = req.user.id;
+  const transaction = await sequelize.transaction();
 
-    // Get the sales product details
+  try {
+    const isVariantBased = req.user.is_variant_based;
+    const user_id = req.user.id;
+    const company_id = req.user.company_id;
+
+    const receivedQty = Number(quantity);
+    const newOrderQty = Number(order_quantity);
+    const newUnitPrice = Number(unit_price);
+
+    // =========================
+    // Get sales product
+    // =========================
     const salesProduct = await SalesProduct.findOne({
       attributes: [
-        'id', 
-        'sales_id', 
-        'warehouse_id', 
-        'product_id', 
-        'product_variant_id', 
-        'qty', 
-        'unit_price', 
-        'tax', 
-        'taxExcl', 
-        'taxIncl'
+        'id',
+        'sales_id',
+        'warehouse_id',
+        'product_id',
+        'product_variant_id',
+        'qty',
+        'unit_price',
+        'tax',
+        'status',
       ],
       where: { id: sales_product_id },
       include: [
         {
-          association: 'sale',
-          attributes: ['id', 'warehouse_id'],
+          association: 'sales_product_received',
+          attributes: ['received_quantity'],
+          required: false,
+        },
+      ],
+      transaction,
+    });
+
+    if (!salesProduct) {
+      await transaction.rollback();
+
+      return res.status(404).json({
+        status: false,
+        message: 'Sales product not found',
+      });
+    }
+
+    const existingOrderQty = Number(salesProduct.qty);
+    const taxPercent = Number(salesProduct.tax);
+
+    // =========================
+    // Calculate total received
+    // =========================
+    const totalReceivedQuantity =
+      salesProduct.sales_product_received.reduce(
+        (sum, item) => sum + Number(item.received_quantity),
+        0
+      );
+
+    // =========================
+    // Validation
+    // =========================
+    if (receivedQty > existingOrderQty) {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        status: false,
+        message: 'Quantity is greater than ordered quantity',
+      });
+    }
+
+    if (totalReceivedQuantity >= existingOrderQty) {
+      await transaction.rollback();
+
+      return res.status(400).json({
+        status: false,
+        message: 'Sales product already received',
+      });
+    }
+
+    // =========================
+    // Update sales product
+    // Only before first receive
+    // =========================
+    let finalOrderQty = existingOrderQty;
+
+    const shouldUpdateSalesProduct =
+      totalReceivedQuantity === 0 &&
+      (
+        Number(product_id) !== Number(salesProduct.product_id) ||
+        (isVariantBased &&
+          Number(product_variant_id) !== Number(salesProduct.product_variant_id)) ||
+        newOrderQty !== existingOrderQty ||
+        newUnitPrice !== Number(salesProduct.unit_price)
+      );
+
+    if (shouldUpdateSalesProduct) {
+      finalOrderQty = newOrderQty;
+
+      const taxExcl = newUnitPrice * finalOrderQty;
+      const taxAmount = taxExcl * (taxPercent / 100);
+
+      await SalesProduct.update(
+        {
+          product_id,
+          product_variant_id: isVariantBased
+            ? product_variant_id
+            : null,
+          warehouse_id,
+          qty: finalOrderQty,
+          unit_price: newUnitPrice,
+          taxExcl,
+          taxIncl: taxExcl + taxAmount,
+          taxAmount,
         },
         {
-          association: 'sales_product_received',
-          attributes: ['id', 'received_quantity', 'rejected_quantity'],
-          where: { sales_product_id: sales_product_id },
-          required: false,
+          where: { id: sales_product_id },
+          transaction,
         }
-      ]
-    });
-
-    // check if the sales product exists and the quantity is greater than the sales product quantity
-    if (!salesProduct) {
-      return res.status(400).json({ message: "Sales product not found" });
-    } else if (salesProduct.qty < quantity) {
-      return res.status(400).json({ message: "Quantity is greater than the sales product quantity" });
+      );
     }
 
-    // get the total received quantity
-    let totalReceivedQuantity = 0;
-    salesProduct.sales_product_received.forEach((received) => {
-      totalReceivedQuantity += received.received_quantity;
-    });
+    // =========================
+    // Received tax calculations
+    // =========================
+    const receivedTaxExcl = newUnitPrice * receivedQty;
+    const receivedTaxAmount = receivedTaxExcl * (taxPercent / 100);
 
-    // if the total received quantity is equal to the sales product quantity then return error
-    if (totalReceivedQuantity === parseInt(salesProduct.qty)) {
-      return res.status(400).json({ message: "Sales product already received" });
-    }
+    // =========================
+    // Create receive entry
+    // =========================
+    await SalesProductReceived.create(
+      {
+        sales_id,
+        sales_product_id,
+        product_id,
+        product_variant_id: isVariantBased
+          ? product_variant_id
+          : null,
+        warehouse_id,
+        company_id,
+        received_by: user_id,
+        received_quantity: receivedQty,
+        unit_price: newUnitPrice,
+        tax: taxPercent,
+        taxExcl: receivedTaxExcl,
+        taxIncl: receivedTaxExcl + receivedTaxAmount,
+      },
+      { transaction }
+    );
 
-    // start the transaction
-    transaction = await sequelize.transaction();
+    // =========================
+    // Update product status
+    // =========================
+    const updatedReceivedQty =
+      totalReceivedQuantity + receivedQty;
 
-    let order_quantity = salesProduct.qty;
-    let updateSalesProduct = {};
+    const productStatus =
+      updatedReceivedQty >= finalOrderQty ? 10 : 9;
 
-    // If order is not partially received then update the sales product
-    if (totalReceivedQuantity === 0 
-      && (
-        product_id !== parseInt(salesProduct.product_id) || 
-        (isVariantBased && product_variant_id !== parseInt(salesProduct.product_variant_id)) ||
-        req.body.order_quantity !== salesProduct.qty ||
-        unit_price !== salesProduct.unit_price
-      )) {
-
-      // Update the sales product if the product id, product variant id, order quantity or unit price is different
-        order_quantity = req.body.order_quantity;
-        const totalTaxExcl = unit_price * parseInt(order_quantity);
-        const tax_amount = totalTaxExcl * (parseInt(salesProduct.tax) / 100);
-    
-        const totalTaxIncl = totalTaxExcl + tax_amount;
-        updateSalesProduct = {
-          ...updateSalesProduct,
-          qty: order_quantity,
-          unit_price: unit_price,
-          taxExcl: totalTaxExcl,
-          taxIncl: totalTaxIncl,
-          taxAmount: tax_amount
-        };
-  
-      updateSalesProduct = {
-        ...updateSalesProduct,
-        product_id: product_id,
-        product_variant_id: isVariantBased ? product_variant_id : null,
-        warehouse_id: warehouse_id
-      };
-  
-  
-      // update the sales product
-      await SalesProduct.update(updateSalesProduct, {
+    await SalesProduct.update(
+      { status: productStatus },
+      {
         where: { id: sales_product_id },
         transaction,
-      });
-    }
+      }
+    );
 
+    // =========================
+    // Update stock
+    // =========================
+    await updateStockEntry(
+      sales_id,
+      warehouse_id,
+      product_id,
+      isVariantBased ? product_variant_id : null,
+      receivedQty,
+      10,
+      user_id,
+      transaction
+    );
 
-    // calculate the tax for the received quantity
-    const totalTaxExclforReceived = unit_price * parseInt(quantity);
-    const tax_amount = totalTaxExclforReceived * (parseInt(salesProduct.tax) / 100);
-
-    const totalTaxInclforReceived = totalTaxExclforReceived + tax_amount;
-
-    // create the sales product received
-    await SalesProductReceived.create({
-      sales_id: sales_id,
-      sales_product_id: sales_product_id,
-      product_id: product_id,
-      product_variant_id: isVariantBased ? product_variant_id : null,
-      warehouse_id: warehouse_id,
-      company_id: req.user.company_id,
-      received_by: user_id,
-      received_quantity: parseInt(quantity),
-      unit_price: unit_price,
-      tax: parseInt(salesProduct.tax),
-      taxExcl: totalTaxExclforReceived,
-      taxIncl: totalTaxInclforReceived,
-    }, { transaction });
-
-    // add the quantity to the total received quantity
-    totalReceivedQuantity += quantity;
-    // Update status of the sales product to 10 if fully received otherwise set to 9
-    if (parseInt(order_quantity) === parseInt(totalReceivedQuantity)) {
-      await SalesProduct.update({ status: 10 }, {
-        where: { id: sales_product_id },
-        transaction,
-      });
-    } else {
-      await SalesProduct.update({ status: 9 }, {
-        where: { id: sales_product_id },
-        transaction,
-      });
-    }
-
-    // update the stock entry (increase quantity & decrease sale_order_recieved)
-    await updateStockEntry(sales_id, warehouse_id, product_id, isVariantBased ? product_variant_id : null, quantity, 10, user_id, transaction);
-
-    // commit the transaction
-    await transaction.commit();
-
-    // check if all products are dispatched
-    const allPurchaseProducts = await SalesProduct.findAll({
-      attributes: ['id', 'status'],
-      raw: true,
+    // =========================
+    // Update sale status
+    // =========================
+    const pendingCount = await SalesProduct.count({
       where: {
         sales_id: salesProduct.sales_id,
+        status: {
+          [Op.ne]: 10,
+        },
+      },
+      transaction,
+    });
+
+    if (pendingCount === 0) {
+      await Sale.update(
+        { status: 10 },
+        {
+          where: { id: salesProduct.sales_id },
+          transaction,
+        }
+      );
+    }
+
+    await transaction.commit();
+
+    await registerUserActivity({
+      req,
+      module: "sales",
+      action: "sale_order_dispatch_by_floor_manager",
+      entityType: "Sale",
+      entityId: salesProduct.sales_id,
+      entityReference: salesProduct.reference_number || null,
+      description: `Dispatched ${receivedQty} unit(s) of sales product #${sales_product_id} for sale order #${salesProduct.sales_id}`,
+      metadata: {
+        sales_id: salesProduct.sales_id,
+        sales_product_id,
+        product_id,
+        product_variant_id: isVariantBased ? product_variant_id : null,
+        warehouse_id,
+        received_quantity: receivedQty,
+        order_quantity: finalOrderQty,
+        total_received_after: updatedReceivedQty,
+        unit_price: newUnitPrice,
+        tax: taxPercent,
+        product_status: productStatus,
+        sale_fully_dispatched: pendingCount === 0,
       },
     });
 
-    let allDispatched = true;
-    for (const product of allPurchaseProducts) {
-      if (product.status !== 10) {
-        allDispatched = false;
-        break;
-      }
-    }
-
-    // update the sales status to dispatched if all products are dispatched
-    if (allDispatched) {
-      await Sale.update({ status: 10 }, {
-        where: { id: salesProduct.sales_id },
-      });
-    }
-
-    // Return the response
     return res.status(200).json({
       status: true,
-      message: "Sales product received successfully",
+      message: 'Sales product received successfully',
       data: null,
     });
+
   } catch (error) {
-    console.error("Error in receiveSalesProduct", error);
-    // Rollback the transaction if it exists
-    if (transaction) {
-      await transaction.rollback();
-    }
+    console.error('Error in receiveSalesProduct:', error);
+
+    await transaction.rollback();
+
     return res.status(error.status || 500).json({
       status: false,
-      error: error.message || "An error occurred while receiving the sales product",
+      error:
+        error.message ||
+        'An error occurred while receiving the sales product',
     });
   }
-}
+};
 
 // final dispatch of sales order
 exports.finalDispatch = async (req, res) => {
