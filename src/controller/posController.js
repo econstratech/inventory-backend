@@ -1,23 +1,27 @@
-const crypto = require("crypto");
-const Razorpay = require("razorpay");
-const sequelize = require("../database/db-connection");
-const Order = require("../model/Order");
-const OrderItem = require("../model/OrderItem");
-const PaymentGateway = require("../model/PaymentGateway");
-const Product = require("../model/Product");
-const Customer = require("../model/Customer");
-const { sendMail } = require("../utils/Helper");
-const TrackProductStock = require("../model/TrackProductStock");
-const CompanyManagementModel = require("../model/Company");
 const path = require('path');
 const puppeteer = require('puppeteer');
 const fs = require('fs-extra');
+const htmlPdf = require('html-pdf-node');
 const { toWords } = require('number-to-words');
 const { Op, fn, col, literal } = require("sequelize");
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
 
-const htmlPdf = require('html-pdf-node');
+
+const sequelize = require("../database/db-connection");
+const { 
+  Product, 
+  Purchase, 
+  PurchaseProduct, 
+  Company, 
+  TrackProductStock, 
+  Customer 
+} = require("../model");
+const Order = require("../model/Order");
+const OrderItem = require("../model/OrderItem");
+const PaymentGateway = require("../model/PaymentGateway");
+const { sendMail } = require("../utils/Helper");
 const generateUniqueReferenceNumber = require("../utils/generateReferenceNumber");
-const { Purchase, PurchaseProduct } = require("../model/Sales");
 
 exports.verifyPayment = async (req, res) => {
   const {
@@ -52,7 +56,7 @@ exports.verifyPayment = async (req, res) => {
       }
     );
     const paidOrder = await Order.findOne({ where: { custom_order_id } });
-    const company = await CompanyManagementModel.findOne({ where: { id: req.user.company_id } });
+    const company = await Company.findOne({ where: { id: req.user.company_id } });
 
 
   if (company && Number(company.pos_link_with_sales) === 1) {
@@ -68,6 +72,7 @@ exports.verifyPayment = async (req, res) => {
       .json({ message: "Payment verification failed", error: err.message });
   }
 };
+
 exports.placeOrder = async (req, res) => {
   const {
     customer_id,
@@ -139,7 +144,7 @@ exports.placeOrder = async (req, res) => {
       });
 
       const currentStock = (stockIn || 0) - (stockOut || 0);
-       const chkSettings = await CompanyManagementModel.findOne({
+       const chkSettings = await Company.findOne({
             where: {
                 id: req.user.company_id
             }
@@ -182,6 +187,7 @@ exports.placeOrder = async (req, res) => {
     }
 
     const customer = await Customer.findByPk(customer_id);
+    let responseData = null;
 
     if (payment_type === "online") {
       const gateway = await PaymentGateway.findOne({
@@ -206,30 +212,37 @@ exports.placeOrder = async (req, res) => {
         payment_capture: 1,
       });
 
-      if (customer?.email) {
-        await sendMail(
-          customer.email,
-          `Order Confirmation - ${customOrderId}`,
-          `
-            <h2>Thank you for your order, ${customer.name}!</h2>
-            <p>Your order <strong>${customOrderId}</strong> has been placed successfully.</p>
-            <p><strong>Amount:</strong> ₹${grandTotal}</p>
-            <p><strong>Payment Status:</strong> Pending</p>
-            <p><strong>Shipping Address:</strong> ${shipping_address}</p>
-            <br/>
-            <p>- Growthh</p>
-          `
-        );
-      }
+      // if (customer?.email) {
+      //   await sendMail(
+      //     customer.email,
+      //     `Order Confirmation - ${customOrderId}`,
+      //     `
+      //       <h2>Thank you for your order, ${customer.name}!</h2>
+      //       <p>Your order <strong>${customOrderId}</strong> has been placed successfully.</p>
+      //       <p><strong>Amount:</strong> ₹${grandTotal}</p>
+      //       <p><strong>Payment Status:</strong> Pending</p>
+      //       <p><strong>Shipping Address:</strong> ${shipping_address}</p>
+      //       <br/>
+      //       <p>- Growthh</p>
+      //     `
+      //   );
+      // }
 
-      await t.commit();
-
-      return res.status(200).json({
+      responseData = {
         orderId: customOrderId,
         razorpayOrderId: payment.id,
         key_id: gateway.keyid,
-      });
+        message: "Order placed successfully via online payment."
+      };
+    } else {
+       responseData = {
+        orderId: customOrderId,
+        redirectUrl: `/pos/thank-you?order_id=${customOrderId}`,
+        message: "Order placed successfully via offline payment."
+      };
     }
+
+    await t.commit();
 
     // Offline flow
     if (customer?.email) {
@@ -248,13 +261,7 @@ exports.placeOrder = async (req, res) => {
       );
     }
 
-    await t.commit();
-
-    return res.status(200).json({
-      message: "Order placed successfully via offline payment.",
-      orderId: customOrderId,
-      redirectUrl: `/pos/thank-you?order_id=${customOrderId}`,
-    });
+    return res.status(200).json(responseData);
 
   } catch (err) {
     await t.rollback();
@@ -714,7 +721,7 @@ exports.downloadInvoice = async (req, res) => {
     }
 
     const customer = await Customer.findOne({ where: { id: order.customer_id } });
-    const company = await CompanyManagementModel.findOne({ where: { id: order.company_id } });
+    const company = await Company.findOne({ where: { id: order.company_id } });
 
     // Step 2: Generate invoice HTML and PDF
     const html = await generateInvoiceHtml(order, items, customer, company);

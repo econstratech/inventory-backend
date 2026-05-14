@@ -24,7 +24,6 @@ const PurchaseProduct = require('./PurchaseProduct');
 const Remarks = require('./Remarks');
 const Followup = require('./Followup');
 const AdvancePayment = require('./AdvancePayment');
-const Payment = require('./Payment');
 const Bill = require('./Bill');
 const BillProduct = require('./BillProduct');
 const Recv = require('./Recv');
@@ -57,6 +56,11 @@ const WorkOrderMaterialMapping = require('./WorkOrderMaterialMapping');
 const WorkOrderDispatchBatch = require('./WorkOrderDispatchBatch');
 const BarcodeSettings = require('./BarcodeSettings');
 const UserActivityLog = require('./UserActivityLog');
+
+const Order = require('./Order');
+const OrderItem = require('./OrderItem');
+const Payment = require('./Payment');
+const PaymentGateway = require('./PaymentGateway');
 
 User.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Company.hasOne(GeneralSettings, { foreignKey: 'company_id', as: 'generalSettings' });
@@ -438,6 +442,12 @@ WorkOrderDispatchBatch.belongsTo(WorkOrderDispatchLog, { foreignKey: 'dispatch_l
 UserActivityLog.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 UserActivityLog.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
+Order.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
+Order.belongsTo(User, { foreignKey: 'user_id', as: 'createdBy' });
+Order.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
+Order.hasMany(OrderItem, { foreignKey: 'order_id', as: 'orderItems' });
+Order.hasOne(Payment, { foreignKey: 'order_id', as: 'payment' });
+
 module.exports = {
     Module,
     Role,
@@ -493,5 +503,9 @@ module.exports = {
     WorkOrderMaterialMapping,
     WorkOrderDispatchBatch,
     BarcodeSettings,
-    UserActivityLog
+    UserActivityLog,
+    Order,
+    OrderItem,
+    Payment,
+    PaymentGateway,
 };

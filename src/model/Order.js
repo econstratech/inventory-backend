@@ -1,52 +1,55 @@
 const { DataTypes } = require("sequelize");
 const sequelize = require("../database/db-connection");
-const Customer = require("./Customer");
-const CompanyManagementModel = require("./Company");
-
+// const Customer = require("./Customer");
+// const CompanyManagementModel = require("./Company");
 
 const Order = sequelize.define(
   "Order",
   {
+    id: {
+      type: DataTypes.BIGINT,
+      primaryKey: true,
+      autoIncrement: true,
+    },
     customer_id: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.BIGINT,
       allowNull: false,
     },
-    custom_order_id: {
-      type: DataTypes.STRING,
+    company_id: {
+      type: DataTypes.BIGINT.UNSIGNED,
       allowNull: false,
-    
     },
-    payment_id: {
-      type: DataTypes.STRING,
-      allowNull: true,
-    },
-
     shipping: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
       defaultValue: 0,
     },
     discount: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
       defaultValue: 0,
     },
     subtotal: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
     sgst: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
       defaultValue: 0,
     },
     cgst: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
       defaultValue: 0,
     },
     igst: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
       defaultValue: 0,
     },
     grand_total: {
-      type: DataTypes.FLOAT,
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
     },
     shipping_address: {
@@ -54,17 +57,21 @@ const Order = sequelize.define(
       allowNull: true,
     },
     payment_type: {
-      type: DataTypes.STRING,
+      type: DataTypes.STRING(100),
       allowNull: false,
     },
     payment_status: {
       type: DataTypes.ENUM("Pending", "Paid", "Failed"),
+      allowNull: false,
       defaultValue: "Pending",
     },
-    
-    company_id: {
-      type: DataTypes.INTEGER,
+    payment_id: {
+      type: DataTypes.STRING(100),
       allowNull: true,
+    },
+    custom_order_id: {
+      type: DataTypes.STRING(300),
+      allowNull: false,
     },
   },
   {
@@ -76,12 +83,21 @@ const Order = sequelize.define(
 );
 
 // Associations
-Order.belongsTo(Customer, {
-  foreignKey: "customer_id",
-  as: "customer",
-});
-Order.associate = function(models) {
-    Order.belongsTo(Customer, { foreignKey: 'customer_id', as: 'customer' });
-    Order.belongsTo(CompanyManagementModel, { foreignKey: 'company_id', as: 'company' });
-  };
+// Order.belongsTo(Customer, {
+//   foreignKey: "customer_id",
+//   as: "customer",
+// });
+// Order.belongsTo(CompanyManagementModel, {
+//   foreignKey: "company_id",
+//   as: "company",
+// });
+
+// Order.associate = function (models) {
+//   Order.belongsTo(Customer, { foreignKey: "customer_id", as: "customer" });
+//   Order.belongsTo(CompanyManagementModel, { foreignKey: "company_id", as: "company" });
+//   if (models.OrderItem) {
+//     Order.hasMany(models.OrderItem, { foreignKey: "order_id", as: "items" });
+//   }
+// };
+
 module.exports = Order;
