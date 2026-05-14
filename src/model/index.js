@@ -403,8 +403,9 @@ WorkOrderStep.belongsTo(CompanyProductionStep, { foreignKey: 'step_id', as: 'ste
 WorkOrderStep.belongsTo(MasterUOM, { foreignKey: 'uom_id', as: 'masterUOM' });
 
 WorkOrderMaterialIssue.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
+WorkOrderMaterialIssue.belongsTo(Warehouse, { foreignKey: 'warehouse_id', as: 'warehouse' });
 // WorkOrderMaterialIssue.belongsTo(Product, { foreignKey: 'rm_product_id', as: 'rmProduct' });
-// WorkOrderMaterialIssue.belongsTo(ProductVariant, { foreignKey: 'rm_product_variant_id', as: 'rmProductVariant' });
+WorkOrderMaterialIssue.belongsTo(ProductVariant, { foreignKey: 'rm_product_variant_id', as: 'rmProductVariant' });
 // WorkOrderMaterialIssue.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 
 ProductionActivityLog.belongsTo(WorkOrder, { foreignKey: 'wo_id', as: 'workOrder' });
