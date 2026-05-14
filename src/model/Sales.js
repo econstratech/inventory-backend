@@ -295,41 +295,4 @@ const SalesAdvancePayment = sequelize.define(
     }
 );
 
-// Purchase.hasMany(PurchaseProduct, { foreignKey: 'sales_id' });
-// Purchase.hasMany(PurchaseProduct, { foreignKey: 'sales_id' ,as:"products"});
-// PurchaseProduct.belongsTo(Purchase, { foreignKey: 'sales_id' });
-// Purchase.belongsTo(Customer, { foreignKey: 'customer_id',as: 'customer' });
-// PurchaseProduct.belongsTo(Product, { foreignKey: 'product_id' ,as:"ProductsItem"});
-// Purchase.hasOne(Remarks, { foreignKey: 'sales_id',as: 'remarkdata' });
-// Remarks.belongsTo(Purchase, { foreignKey: 'sales_id',as: 'remark' });
-// Purchase.hasMany(Followup, { foreignKey: 'sales_id',as: 'followup' });
-// Purchase.hasOne(AdvancePayment, { foreignKey: 'sales_id',as: 'advance' });
-// PurchaseRe.hasMany(PurchaseProductRe, { foreignKey: 'sales_re_id' ,as:"productsre"});
-// Purchase.hasMany(PurchaseRe, { foreignKey: 'sales_id',as:"productsreprodut" });
-// PurchaseProductRe.belongsTo(Product, { foreignKey: 'product_id' ,as:"ProductsItemre"});
-// Purchase.belongsTo(User, { foreignKey: "user_id", as: "createdByUser" });
-
-// PurchaseProduct.belongsTo(Product, {
-//     foreignKey: 'product_id',
-//     as: 'product'
-//   });
-
-// PurchaseProduct.belongsTo(Purchase, { foreignKey: 'sales_id', as: "purchase" });
-// Purchase.belongsTo(CompanyManagementModel, {
-//     foreignKey: 'company_id',
-//     as: 'companyManagement'
-// });
-// module.exports = { 
-//     Sale, 
-//     SalesProduct, 
-//     SalesRe, 
-//     SalesProductRe, 
-//     SalesRemarks, 
-//     SalesFollowup, 
-//     SalesAdvancePayment, 
-//     SalesRemarks, 
-//     SalesFollowup, 
-//     SalesAdvancePayment,
-// };
-
 module.exports = Sale;
