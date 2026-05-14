@@ -7,6 +7,7 @@ const {
   WorkOrder,
   MasterBOM,
   ProductVariant,
+  WorkOrderMaterialMapping,
 } = require("../model");
 const CommonHelper = require("../helpers/commonHelper");
 
@@ -1245,6 +1246,7 @@ exports.getMaterialIssueReport = async (req, res) => {
     const limit = parseInt(req.query.limit, 10) || 10;
     const offset = (page - 1) * limit;
     const search = req.query.search || "";
+    const isProductionWithoutBOM = req.user.production_without_bom === 1;
 
     // ── Build where clause ──
     const where = { company_id, status: 4 };
@@ -1279,8 +1281,10 @@ exports.getMaterialIssueReport = async (req, res) => {
         "final_product_variant_id",
         "planned_qty",
         "final_qty",
+        'final_waste_qty',
         "due_date",
         "production_completed_at",
+        "created_at",
       ],
       where,
       limit,
@@ -1317,6 +1321,16 @@ exports.getMaterialIssueReport = async (req, res) => {
             "issued_qty",
             "warehouse_id",
           ],
+          include: [
+            {
+              association: "warehouse",
+              attributes: ["id", "name"],
+            },
+            {
+              association: "rmProductVariant",
+              attributes: ["id", "weight_per_unit", "weight_per_pack", "quantity_per_pack"],
+            }
+          ]
         },
       ],
     });
@@ -1329,106 +1343,223 @@ exports.getMaterialIssueReport = async (req, res) => {
       });
     }
 
-    // ── Batch-fetch BOM data for all WOs in this page ──
-    // Build unique (product_id, variant_id) pairs to query BOM once
-    const bomConditions = [];
-    for (const wo of workOrders.rows) {
-      if (isVariantBased && wo.final_product_variant_id) {
-        bomConditions.push({
-          [Op.and]: [
-            { final_product_id: wo.product_id },
-            { final_product_variant_id: wo.final_product_variant_id },
-          ],
-        });
-      } else {
-        bomConditions.push({
-          [Op.and]: [
-            { final_product_id: wo.product_id },
-            { final_product_variant_id: null },
-          ],
-        });
-      }
-    }
+    let rows;
 
-    const bomRows = await MasterBOM.findAll({
-      attributes: [
-        "id",
-        "final_product_id",
-        "final_product_variant_id",
-        "raw_material_product_id",
-        "raw_material_variant_id",
-        "quantity",
-      ],
-      where: { [Op.or]: bomConditions },
-      include: [
-        {
-          association: "rawMaterialProduct",
-          attributes: ["id", "product_name", "product_code"],
-        },
-        ...(isVariantBased
-          ? [
-              {
-                association: "rawMaterialProductVariant",
-                attributes: ["id", "weight_per_unit"],
-                required: false,
-                include: [
-                  { association: "masterUOM", attributes: ["id", "label"] },
-                ],
-              },
-            ]
-          : []),
-      ],
-    });
-
-    // Index BOM rows by "productId:variantId" for fast lookup
-    const bomMap = {};
-    for (const bom of bomRows) {
-      const key = `${bom.final_product_id}:${bom.final_product_variant_id || "null"}`;
-      if (!bomMap[key]) bomMap[key] = [];
-      bomMap[key].push(bom);
-    }
-
-    // ── Merge BOM + material issues per work order ──
-    const rows = workOrders.rows.map((wo) => {
-      const woJSON = wo.toJSON();
-      const bomKey = `${woJSON.product_id}:${woJSON.final_product_variant_id || "null"}`;
-      const bomItems = bomMap[bomKey] || [];
-
-      // Index issued quantities by "rmProductId:rmVariantId"
-      const issuedMap = {};
-      for (const mi of woJSON.workOrderMaterialIssues || []) {
-        const miKey = `${mi.rm_product_id}:${mi.rm_product_variant_id || "null"}`;
-        issuedMap[miKey] = (issuedMap[miKey] || 0) + Number(mi.issued_qty || 0);
+    if (isProductionWithoutBOM) {
+      // ── Without-BOM mode: pull allowed RMs from work_order_material_mapping ──
+      // The mapping table only declares which raw materials are allowed for an
+      // FG (no per-RM quantity); required_qty / variance therefore do not apply
+      // in this mode and are returned as null.
+      const mappingConditions = [];
+      for (const wo of workOrders.rows) {
+        if (isVariantBased && wo.final_product_variant_id) {
+          mappingConditions.push({
+            [Op.and]: [
+              { fg_product_id: wo.product_id },
+              { fg_product_variant_id: wo.final_product_variant_id },
+            ],
+          });
+        } else {
+          mappingConditions.push({
+            [Op.and]: [
+              { fg_product_id: wo.product_id },
+              { fg_product_variant_id: null },
+            ],
+          });
+        }
       }
 
-      // Build material list: BOM required qty (scaled by planned_qty) vs issued
-      const materialDetails = bomItems.map((bom) => {
-        const bomJSON = bom.toJSON ? bom.toJSON() : bom;
-        const miKey = `${bomJSON.raw_material_product_id}:${bomJSON.raw_material_variant_id || "null"}`;
-        const requiredQty = Number(bomJSON.quantity) * Number(woJSON.planned_qty);
-        const issuedQty = issuedMap[miKey] || 0;
-
-        return {
-          bom_id: bomJSON.id,
-          rm_product_id: bomJSON.raw_material_product_id,
-          rm_product_variant_id: bomJSON.raw_material_variant_id,
-          rawMaterialProduct: bomJSON.rawMaterialProduct,
-          ...(isVariantBased ? { rawMaterialProductVariant: bomJSON.rawMaterialProductVariant } : {}),
-          bom_qty_per_unit: Number(bomJSON.quantity),
-          required_qty: requiredQty,
-          issued_qty: issuedQty,
-          variance: issuedQty - requiredQty,
-        };
+      const mappingRows = await WorkOrderMaterialMapping.findAll({
+        attributes: [
+          "id",
+          "fg_product_id",
+          "fg_product_variant_id",
+          "rm_product_id",
+        ],
+        where: { [Op.or]: mappingConditions },
+        include: [
+          {
+            association: "rmProduct",
+            attributes: ["id", "product_name", "product_code"],
+          },
+        ],
       });
 
-      // Remove raw workOrderMaterialIssues from response, replaced by materialDetails
-      delete woJSON.workOrderMaterialIssues;
+      // Index by "fgProductId:fgVariantId"
+      const mappingMap = {};
+      for (const m of mappingRows) {
+        const key = `${m.fg_product_id}:${m.fg_product_variant_id || "null"}`;
+        if (!mappingMap[key]) mappingMap[key] = [];
+        mappingMap[key].push(m);
+      }
 
-      return {
-        ...woJSON,
-        materialDetails,
-      };
-    });
+      rows = workOrders.rows.map((wo) => {
+        const woJSON = wo.toJSON();
+        const mapKey = `${woJSON.product_id}:${woJSON.final_product_variant_id || "null"}`;
+        const mappedItems = mappingMap[mapKey] || [];
+
+        // Aggregate issued quantities by rm_product_id (mapping has no variant
+        // column, so variants get summed). Also collect a per-warehouse
+        // breakdown so the report can show which warehouse each issue came from.
+        const issuedByRm = {};
+        const warehousesByRm = {};
+        for (const mi of woJSON.workOrderMaterialIssues || []) {
+          const rmKey = String(mi.rm_product_id);
+          const qty = Number(mi.issued_qty || 0);
+          issuedByRm[rmKey] = (issuedByRm[rmKey] || 0) + qty;
+
+          if (!warehousesByRm[rmKey]) warehousesByRm[rmKey] = {};
+          const whKey = String(mi.warehouse_id ?? "null");
+          if (!warehousesByRm[rmKey][whKey]) {
+            warehousesByRm[rmKey][whKey] = {
+              warehouse_id: mi.warehouse_id ?? null,
+              warehouse_name: mi.warehouse?.name ?? null,
+              issued_qty: 0,
+            };
+          }
+          warehousesByRm[rmKey][whKey].issued_qty += qty;
+        }
+
+        const materialDetails = mappedItems.map((mapping) => {
+          const m = mapping.toJSON ? mapping.toJSON() : mapping;
+          const rmKey = String(m.rm_product_id);
+ 
+          const issuedQty = issuedByRm[rmKey] || 0;
+          const warehouses = warehousesByRm[rmKey]
+            ? Object.values(warehousesByRm[rmKey])
+            : [];
+          return {
+            mapping_id: m.id,
+            rm_product_id: m.rm_product_id,
+            rm_product_variant_id: null,
+            rawMaterialProduct: m.rmProduct,
+            ...(isVariantBased ? { rawMaterialProductVariant: null } : {}),
+            bom_qty_per_unit: null,
+            required_qty: null,
+            issued_qty: issuedQty,
+            variance: null,
+            warehouses,
+          };
+        });
+
+        delete woJSON.workOrderMaterialIssues;
+        return { ...woJSON, materialDetails };
+      });
+    } else {
+      // ── BOM mode: pull required RMs + quantities from master_bom ──
+      const bomConditions = [];
+      for (const wo of workOrders.rows) {
+        if (isVariantBased && wo.final_product_variant_id) {
+          bomConditions.push({
+            [Op.and]: [
+              { final_product_id: wo.product_id },
+              { final_product_variant_id: wo.final_product_variant_id },
+            ],
+          });
+        } else {
+          bomConditions.push({
+            [Op.and]: [
+              { final_product_id: wo.product_id },
+              { final_product_variant_id: null },
+            ],
+          });
+        }
+      }
+
+      const bomRows = await MasterBOM.findAll({
+        attributes: [
+          "id",
+          "final_product_id",
+          "final_product_variant_id",
+          "raw_material_product_id",
+          "raw_material_variant_id",
+          "quantity",
+        ],
+        where: { [Op.or]: bomConditions },
+        include: [
+          {
+            association: "rawMaterialProduct",
+            attributes: ["id", "product_name", "product_code"],
+          },
+          ...(isVariantBased
+            ? [
+                {
+                  association: "rawMaterialProductVariant",
+                  attributes: ["id", "weight_per_unit"],
+                  required: false,
+                  include: [
+                    { association: "masterUOM", attributes: ["id", "label"] },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      });
+
+      // Index BOM rows by "productId:variantId" for fast lookup
+      const bomMap = {};
+      for (const bom of bomRows) {
+        const key = `${bom.final_product_id}:${bom.final_product_variant_id || "null"}`;
+        if (!bomMap[key]) bomMap[key] = [];
+        bomMap[key].push(bom);
+      }
+
+      // Merge BOM + material issues per work order
+      rows = workOrders.rows.map((wo) => {
+        const woJSON = wo.toJSON();
+        const bomKey = `${woJSON.product_id}:${woJSON.final_product_variant_id || "null"}`;
+        const bomItems = bomMap[bomKey] || [];
+
+        // Index issued quantities by "rmProductId:rmVariantId" and collect a
+        // per-warehouse breakdown so the report can surface where each RM was
+        // issued from.
+        const issuedMap = {};
+        const warehousesByKey = {};
+        for (const mi of woJSON.workOrderMaterialIssues || []) {
+          const miKey = `${mi.rm_product_id}:${mi.rm_product_variant_id || "null"}`;
+          const qty = Number(mi.issued_qty || 0);
+          issuedMap[miKey] = (issuedMap[miKey] || 0) + qty;
+
+          if (!warehousesByKey[miKey]) warehousesByKey[miKey] = {};
+          const whKey = String(mi.warehouse_id ?? "null");
+          if (!warehousesByKey[miKey][whKey]) {
+            warehousesByKey[miKey][whKey] = {
+              warehouse_id: mi.warehouse_id ?? null,
+              warehouse_name: mi.warehouse?.name ?? null,
+              issued_qty: 0,
+            };
+          }
+          warehousesByKey[miKey][whKey].issued_qty += qty;
+        }
+
+        // Build material list: BOM required qty (scaled by planned_qty) vs issued
+        const materialDetails = bomItems.map((bom) => {
+          const bomJSON = bom.toJSON ? bom.toJSON() : bom;
+          const miKey = `${bomJSON.raw_material_product_id}:${bomJSON.raw_material_variant_id || "null"}`;
+          const requiredQty = Number(bomJSON.quantity) * Number(woJSON.planned_qty);
+          const issuedQty = issuedMap[miKey] || 0;
+          const warehouses = warehousesByKey[miKey]
+            ? Object.values(warehousesByKey[miKey])
+            : [];
+
+          return {
+            bom_id: bomJSON.id,
+            rm_product_id: bomJSON.raw_material_product_id,
+            rm_product_variant_id: bomJSON.raw_material_variant_id,
+            rawMaterialProduct: bomJSON.rawMaterialProduct,
+            ...(isVariantBased ? { rawMaterialProductVariant: bomJSON.rawMaterialProductVariant } : {}),
+            bom_qty_per_unit: Number(bomJSON.quantity),
+            required_qty: requiredQty,
+            issued_qty: issuedQty,
+            variance: issuedQty - requiredQty,
+            warehouses,
+          };
+        });
+
+        delete woJSON.workOrderMaterialIssues;
+        return { ...woJSON, materialDetails };
+      });
+    }
 
     const paginatedData = CommonHelper.paginate(
       { count: workOrders.count, rows },
