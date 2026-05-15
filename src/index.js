@@ -3,6 +3,7 @@ const express = require("express");
 require('dotenv').config();
 // const bcrypt = require("bcrypt");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 // const Excel = require('exceljs');
 // Route registration (all API routes mounted from router/SettingsRoute.js)
 const registerRoutes = require("./router/RegisterRoute");
@@ -19,7 +20,18 @@ const appPrefix = '/api';
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+// Credentialed CORS. FRONTEND_URL is required in cross-origin deployments; same-origin
+// production serves the React build from this server (see app.use(express.static) below)
+// so the origin allowlist is only relevant for dev where the React dev server runs on :3000.
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+app.use(cors({
+  origin: allowedOrigins.length ? allowedOrigins : true,
+  credentials: true,
+}));
+app.use(cookieParser());
 app.use(express.static('uploads'));
 app.use(express.static('utils/uploads'));
 

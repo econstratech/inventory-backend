@@ -47,7 +47,7 @@ const {
 const router = express.Router();
 const { addEwayBillAccount, updateEwayBillAccount, getAllEwayBillAccounts, deleteEwayBillAccount } = require("../controller/EwayBillController");
 const { eaddEwayBillAccount, egetAllEwayBillAccounts, edeleteEwayBillAccount } = require("../controller/EinvoiceApiAccount");
-const { placeOrder, verifyPayment, getOrderDetails, getOrderItemWiseDetails, markOrderItemDelivered, cancelOrderItem, downloadInvoice, getCancelledOrders, getMonthlyOrderSummary, getCustomerCountByCompany, getOrderStatusSummary, getOrderItemReport } = require("../controller/posController");
+const { placeOrder, verifyPayment, getOrderDetails, getOrderItemWiseDetails, markOrderItemDelivered, cancelOrderItem, downloadInvoice, getCancelledOrders, getMonthlyOrderSummary, getCustomerCountByCompany, getOrderStatusSummary, getOrderItemReport, getCustomerNotTurnUp } = require("../controller/posController");
 const { CompanyStatusChnage } = require("../controller/CompanyManagement");
 
 
@@ -121,6 +121,7 @@ router.post("/pos/place-order", authToken, placeOrder);
 router.post('/pos/verify-payment', authToken, verifyPayment);
 router.get("/pos/order/:order_id", authToken,getOrderDetails);
 router.get("/pos/getAllOrdersWithItems", authToken, getOrderItemWiseDetails);
+router.get("/pos/customer-not-turn-up", authToken, getCustomerNotTurnUp);
 router.put("/pos/mark-delivered", authToken, markOrderItemDelivered);
 router.post("/pos/cancel-item", authToken, cancelOrderItem);
 router.post('/pos/download-invoice', authToken, downloadInvoice);

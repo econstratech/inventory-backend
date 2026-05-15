@@ -2,11 +2,12 @@ const bcrypt = require('bcrypt');
 const { Op } = require('sequelize');
 const jwt = require('jsonwebtoken');
 const {
-    User, 
-    ServiceAuditLog, 
-    Role, 
+    User,
+    ServiceAuditLog,
+    Role,
     Module
 } = require('../model');
+const { AUTH_COOKIE_NAME, buildAuthCookieOptions } = require('../utils/authCookie');
 
 exports.Register = async (req, res) => {
     try {
@@ -36,7 +37,8 @@ exports.Register = async (req, res) => {
                 id: userData.id
             }
         })
-        return res.status(200).json({ status: true, message: "user successful created", token: token, user: userData });
+        res.cookie(AUTH_COOKIE_NAME, token, buildAuthCookieOptions());
+        return res.status(200).json({ status: true, message: "user successful created", user: userData });
     } catch (error) {
         return res.status(404).json({ message: error });
     }
@@ -213,11 +215,13 @@ exports.Login = async (req, res) => {
         //delete user password from the response
         delete user.user_password;
 
+        // Set HttpOnly auth cookie; the token never leaves the cookie boundary.
+        res.cookie(AUTH_COOKIE_NAME, token, buildAuthCookieOptions());
+
         //return the response
-        return res.status(200).json({ 
-            status: true, 
-            message: "Login successfully", 
-            token: token, 
+        return res.status(200).json({
+            status: true,
+            message: "Login successfully",
             user: user,
             permissions: permissionsList
         });
@@ -276,6 +280,76 @@ const getUserPermissionList = async (user) => {
 
     return permissionsList;
 }
+
+/**
+ * Return the currently logged-in user (resolved from the HttpOnly cookie)
+ * along with their permission list. Replaces client-side jwtDecode — the
+ * SPA calls this on mount to rebuild auth state after a hard refresh.
+ */
+exports.Me = async (req, res) => {
+    try {
+        const user = await User.findOne({
+            attributes: ['id', 'name', 'email', 'user_password', 'company_id', 'position', 'role'],
+            where: { id: req.user.id, status: 1 },
+            raw: true,
+            nest: true,
+            include: [
+                {
+                    association: 'company',
+                    attributes: ['id', 'company_name'],
+                    include: [
+                        {
+                            association: 'generalSettings',
+                            attributes: [
+                                'timezone',
+                                'symbol',
+                                'currency_name',
+                                'currency_code',
+                                'min_purchase_amount',
+                                'min_sale_amount',
+                                'is_variant_based',
+                                'is_production_planning',
+                                'is_gst_enabled',
+                                'production_without_bom',
+                                'has_master_pack'
+                            ],
+                        }
+                    ]
+                }
+            ]
+        });
+
+        if (!user) {
+            return res.status(401).json({ status: false, message: "User not found" });
+        }
+
+        let permissionsList = [];
+        if (user.role) {
+            permissionsList = await getUserPermissionList(user);
+        }
+
+        delete user.user_password;
+
+        return res.status(200).json({
+            status: true,
+            user: user,
+            permissions: permissionsList,
+        });
+    } catch (error) {
+        console.error('Me Error:', error);
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};
+
+/**
+ * Clear the auth cookie. Best-effort — even if the client lacks a valid
+ * cookie we still respond 200 so the SPA can complete its logout flow.
+ */
+exports.Logout = async (req, res) => {
+    const { maxAge: _ignored, ...clearOptions } = buildAuthCookieOptions();
+    res.clearCookie(AUTH_COOKIE_NAME, clearOptions);
+    return res.status(200).json({ status: true, message: "Logged out" });
+};
 
 exports.GetAllUser = async (req, res) => {
     try {
@@ -651,13 +725,15 @@ exports.ValidateThirdPartyUser = async (req, res) => {
             }
         });
 
+        // Set HttpOnly auth cookie for the third-party SSO handoff
+        res.cookie(AUTH_COOKIE_NAME, newToken, buildAuthCookieOptions());
+
         // return the response
         return res.status(200).json({
             status: true,
             message: "Token is validated & logged in successfully",
             data: {
                 user: user,
-                tokenData: newToken,
                 permissions: permissionsList
             }
         });

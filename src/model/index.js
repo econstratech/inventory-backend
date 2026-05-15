@@ -447,6 +447,11 @@ Order.belongsTo(User, { foreignKey: 'user_id', as: 'createdBy' });
 Order.belongsTo(Company, { foreignKey: 'company_id', as: 'company' });
 Order.hasMany(OrderItem, { foreignKey: 'order_id', as: 'orderItems' });
 Order.hasOne(Payment, { foreignKey: 'order_id', as: 'payment' });
+Order.hasMany(OrderItem, { foreignKey: 'order_id', as: 'items' });
+
+OrderItem.belongsTo(Order, { foreignKey: 'order_id', as: 'order' });
+OrderItem.belongsTo(Product, { foreignKey: 'product_id', as: 'product' });
+OrderItem.belongsTo(ProductVariant, { foreignKey: 'product_variant_id', as: 'productVariant' });
 
 module.exports = {
     Module,

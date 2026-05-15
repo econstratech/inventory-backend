@@ -1,13 +1,15 @@
 
 const express = require("express");
-const { 
-    Register, 
-    Login, 
-    usersList, 
+const {
+    Register,
+    Login,
+    Logout,
+    Me,
+    usersList,
     GetAllUser,
     UpdateUserRoles,
-    ChangePassword, 
-    ValidateUser, 
+    ChangePassword,
+    ValidateUser,
     ValidateThirdPartyUser,
     ResetPassword,
     GetBmsUserPermissionList
@@ -15,10 +17,12 @@ const {
 
 const { authToken } = require("../utils/Middleware");
 
- 
+
 const router = express.Router();
 router.post('/register', Register);
 router.post('/login', Login);
+router.post('/logout', Logout);
+router.get('/me', authToken, Me);
 router.post('/validate', ValidateUser);
 router.get('/get-bms-user-permission-list', GetBmsUserPermissionList);
 router.post('/validate-third-party-user', ValidateThirdPartyUser);
