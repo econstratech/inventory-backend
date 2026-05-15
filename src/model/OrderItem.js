@@ -19,6 +19,10 @@ const OrderItem = sequelize.define(
       type: DataTypes.BIGINT,
       allowNull: false,
     },
+    product_variant_id: {
+      type: DataTypes.BIGINT,
+      allowNull: true,
+    },
     quantity: {
       type: DataTypes.INTEGER,
       allowNull: false,

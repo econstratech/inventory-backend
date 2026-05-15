@@ -15,7 +15,9 @@ const {
   PurchaseProduct, 
   Company, 
   TrackProductStock, 
-  Customer 
+  Customer, 
+  ProductStockEntry,
+  Warehouse
 } = require("../model");
 const Order = require("../model/Order");
 const OrderItem = require("../model/OrderItem");
@@ -98,6 +100,23 @@ exports.placeOrder = async (req, res) => {
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const customOrderId = `ORD-${dateStr}-${randomNum}`;
 
+    // Get all product and store IDs from the order items
+    const allProductIds = products.map(p => p.product_id);
+    const allStoreIds = products.map(p => p.store_id);
+
+    const [allProducts, stores] = await Promise.all([
+      Product.findAll({
+        attributes: ['id', 'product_name', 'product_price', 'unit'],
+        where: { id: { [Op.in]: allProductIds } },
+        transaction: t,
+      }),
+      Warehouse.findAll({
+        attributes: ['id', 'name'],
+        where: { id: { [Op.in]: allStoreIds } },
+        transaction: t,
+      }),
+    ]);
+
     const order = await Order.create({
       custom_order_id: customOrderId,
       customer_id,
@@ -114,61 +133,76 @@ exports.placeOrder = async (req, res) => {
       payment_status: "Pending",
     }, { transaction: t });
 
+    const bulkOrderItemPayloads = [];
+    const promises = [];
+
     for (const item of products) {
+      const selectedProduct = allProducts.find(p => p.id === item.product_id) || null;
+      const storeName = stores.find(s => s.id === item.store_id)?.name || 'Unknown Store';
+      //  check it the item is available in stock
+      const checkItemInstock = await ProductStockEntry.findOne({
+        attributes: ['id', 'product_id', 'warehouse_id', 'quantity'],
+        where: { id: item.stock_entry_id },
+        raw: true,
+        transaction: t,
+        lock: t.LOCK.UPDATE, // Lock the row for update to prevent race conditions
+      });
+      // const productData = await Product.findByPk(item.product_id);
+      // if (!productData) {
+      //   throw new Error(`Product ID ${item.product_id} not found`);
+      // }
+      //  Get current stock: stock-in - stock-out
+      // const stockIn = await TrackProductStock.sum('quantity_changed', {
+      //   where: {
+      //     product_id: item.product_id,
+      //     store_id: item.store_id,
+      //     status_in_out: 1,
+      //   },
+      //   transaction: t,
+      // });
+
+      // const stockOut = await TrackProductStock.sum('quantity_changed', {
+      //   where: {
+      //     product_id: item.product_id,
+      //     store_id: item.store_id,
+      //     status_in_out: 0,
+      //   },
+      //   transaction: t,
+      // });
+
+      // const currentStock = (stockIn || 0) - (stockOut || 0);
+      // const chkSettings = await Company.findOne({
+      //   where: {
+      //       id: req.user.company_id
+      //   }
+      // });
+      if (!checkItemInstock || checkItemInstock.quantity <= 0) {
+        throw new Error(`Insufficient stock for product: ${selectedProduct?.product_name || 'Unknown Product'} in store ${storeName}`);
+      }
+
       //  Create order item
-      await OrderItem.create({
+      bulkOrderItemPayloads.push({
         order_id: order.id,
         product_id: item.product_id,
         quantity: item.quantity,
         price: item.price,
         remarks: item.remarks || null,
-      }, { transaction: t });
-
-      //  Get current stock: stock-in - stock-out
-      const stockIn = await TrackProductStock.sum('quantity_changed', {
-        where: {
-          product_id: item.product_id,
-          store_id: item.store_id,
-          status_in_out: 1,
-        },
-        transaction: t,
       });
-
-      const stockOut = await TrackProductStock.sum('quantity_changed', {
-        where: {
-          product_id: item.product_id,
-          store_id: item.store_id,
-          status_in_out: 0,
-        },
-        transaction: t,
-      });
-
-      const currentStock = (stockIn || 0) - (stockOut || 0);
-       const chkSettings = await Company.findOne({
-            where: {
-                id: req.user.company_id
-            }
-        });
-      if (chkSettings && chkSettings.low_stock_order !== 1) {
-      if (currentStock < item.quantity) {
-        throw new Error(`Insufficient stock for product ID ${item.product_id} in store ${item.store_id}`);
-      }
-    }
-
-      //  Fetch product details
-      const productData = await Product.findByPk(item.product_id);
-      if (!productData) {
-        throw new Error(`Product ID ${item.product_id} not found`);
-      }
+      promises.push(
+        ProductStockEntry.decrement({ quantity: item.quantity }, {
+          where: { id: item.stock_entry_id },
+          transaction: t
+        })
+      );
 
       //  Generate reference and barcode
       const generatedReferenceNumber = `INV${Math.floor(1000000 + Math.random() * 9000000)}`;
       const generatedBarcode = Math.floor(1e15 + Math.random() * 9e15).toString();
 
-      const updatedQty = currentStock - item.quantity;
+      const updatedQty = checkItemInstock.quantity - item.quantity;
 
       // Log deduction
-      await TrackProductStock.create({
+      promises.push(TrackProductStock.create({
         product_id: item.product_id,
         store_id: item.store_id,
         quantity_changed: item.quantity,
@@ -178,15 +212,26 @@ exports.placeOrder = async (req, res) => {
         comment: `POS Order #${customOrderId}`,
         reference_number: generatedReferenceNumber,
         barcode_number: generatedBarcode,
-        item_name: productData.product_name,
-        default_price: productData.product_price,
-        item_unit: productData.unit || null,
+        item_name: selectedProduct?.product_name || 'Unknown Product',
+        default_price: selectedProduct?.product_price || 0,
+        item_unit: selectedProduct?.unit || null,
         user_id: req.user?.id || null,
         company_id: req.user?.company_id || null,
-      }, { transaction: t });
+      }, { transaction: t }));
     }
 
-    const customer = await Customer.findByPk(customer_id);
+    // Bulk create order items
+    promises.push(OrderItem.bulkCreate(bulkOrderItemPayloads, { transaction: t }));
+
+    // Execute all stock updates and order item creations in parallel
+    await Promise.all(promises);
+
+    const customer = await Customer.findOne({ 
+      attributes: ['id', 'name', 'email'], 
+      where: { id: customer_id },
+      raw: true,
+      transaction: t
+    });
     let responseData = null;
 
     if (payment_type === "online") {
@@ -229,6 +274,7 @@ exports.placeOrder = async (req, res) => {
       // }
 
       responseData = {
+        status: true,
         orderId: customOrderId,
         razorpayOrderId: payment.id,
         key_id: gateway.keyid,
@@ -236,6 +282,7 @@ exports.placeOrder = async (req, res) => {
       };
     } else {
        responseData = {
+        status: true,
         orderId: customOrderId,
         redirectUrl: `/pos/thank-you?order_id=${customOrderId}`,
         message: "Order placed successfully via offline payment."
@@ -245,29 +292,30 @@ exports.placeOrder = async (req, res) => {
     await t.commit();
 
     // Offline flow
-    if (customer?.email) {
-      await sendMail(
-        customer.email,
-        `Order Confirmation - ${customOrderId}`,
-        `
-          <h2>Thank you for your order, ${customer.name}!</h2>
-          <p>Your order <strong>${customOrderId}</strong> has been placed successfully.</p>
-          <p><strong>Amount:</strong> ₹${grandTotal}</p>
-          <p><strong>Payment Type:</strong> ${payment_type}</p>
-          <p><strong>Shipping Address:</strong> ${shipping_address}</p>
-          <br/>
-          <p>- Growthh</p>
-        `
-      );
-    }
+    // if (customer?.email) {
+    //   await sendMail(
+    //     customer.email,
+    //     `Order Confirmation - ${customOrderId}`,
+    //     `
+    //       <h2>Thank you for your order, ${customer.name}!</h2>
+    //       <p>Your order <strong>${customOrderId}</strong> has been placed successfully.</p>
+    //       <p><strong>Amount:</strong> ₹${grandTotal}</p>
+    //       <p><strong>Payment Type:</strong> ${payment_type}</p>
+    //       <p><strong>Shipping Address:</strong> ${shipping_address}</p>
+    //       <br/>
+    //       <p>- Growthh</p>
+    //     `
+    //   );
+    // }
 
     return res.status(200).json(responseData);
 
   } catch (err) {
     await t.rollback();
-    console.error("Order placement failed:", err);
-    return res.status(500).json({
-      message: "Order placement failed",
+    // console.error("Order placement failed:", err);
+    console.log("ERROR", err.message);
+    return res.status(400).json({
+      message: err.message || "Order placement failed",
       error: err.message,
     });
   }
@@ -278,8 +326,6 @@ exports.getOrderDetails = async (req, res) => {
   const { order_id } = req.params;
 
   try {
-    console.log("➡️  Looking for order_id:", order_id);
-
     // Fetch order and customer info
     const orderRows = await sequelize.query(
       `
@@ -363,35 +409,220 @@ exports.getOrderDetails = async (req, res) => {
 
 exports.getOrderItemWiseDetails = async (req, res) => {
   try {
-    const [results] = await sequelize.query(`
-      SELECT 
-        o.*, -- all order fields
-        c.name AS customer_name,
-        c.phone AS customer_phone,
+    const companyId = req.user?.company_id;
 
-        oi.id AS order_item_id,
-        oi.product_id,
-        oi.quantity,
-        oi.price,
-        oi.remarks,
-        oi.status AS item_status,
+    const {
+      page: pageParam,
+      limit: limitParam,
+      status,
+      date_from,
+      date_to,
+      month,
+      year,
+      search,
+    } = req.query;
 
-        p.product_name,
-        p.product_code,
-        p.attachment_file AS product_image,
+    const limitIsAll = String(limitParam).toLowerCase() === 'all';
+    const page = Math.max(1, parseInt(pageParam, 10) || 1);
+    const limit = limitIsAll
+      ? null
+      : Math.max(1, Math.min(500, parseInt(limitParam, 10) || 10));
+    const offset = limit ? (page - 1) * limit : 0;
 
-        (oi.quantity * oi.price) AS item_total
+    const whereClauses = [];
+    const replacements = {};
 
+    if (companyId) {
+      whereClauses.push('o.company_id = :companyId');
+      replacements.companyId = companyId;
+    }
+    if (status !== undefined && status !== '' && status !== null) {
+      whereClauses.push('oi.status = :status');
+      replacements.status = Number(status);
+    }
+    if (date_from) {
+      whereClauses.push('o.created_at >= :date_from');
+      replacements.date_from = date_from;
+    }
+    if (date_to) {
+      whereClauses.push('o.created_at <= :date_to');
+      replacements.date_to = date_to;
+    }
+    if (month) {
+      whereClauses.push('MONTH(o.created_at) = :month');
+      replacements.month = Number(month);
+    }
+    if (year) {
+      whereClauses.push('YEAR(o.created_at) = :year');
+      replacements.year = Number(year);
+    }
+    if (search && String(search).trim() !== '') {
+      whereClauses.push(
+        '(c.name LIKE :search OR p.product_name LIKE :search OR p.product_code LIKE :search OR o.custom_order_id LIKE :search)'
+      );
+      replacements.search = `%${String(search).trim()}%`;
+    }
+
+    const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const fromJoin = `
       FROM orders o
       LEFT JOIN customer c ON o.customer_id = c.id
-      LEFT JOIN order_items oi ON o.id = oi.order_id 
-      LEFT JOIN product p ON oi.product_id = p.id
-      ORDER BY o.created_at DESC;
-    `);
+      LEFT JOIN order_items oi ON o.id = oi.order_id
+      LEFT JOIN product p ON oi.product_id = p.id 
+      LEFT JOIN product_variants pv ON oi.product_variant_id = pv.id 
+      LEFT JOIN master_uom u ON pv.uom_id = u.id
+      ${whereSQL}
+    `;
 
-    res.json(results);
+    const [countRows] = await sequelize.query(
+      `SELECT COUNT(oi.id) AS total ${fromJoin}`,
+      { replacements }
+    );
+    const totalRecords = Number(countRows?.[0]?.total || 0);
+
+    if (limit) {
+      replacements.limit = limit;
+      replacements.offset = offset;
+    }
+    const limitSQL = limit ? 'LIMIT :limit OFFSET :offset' : '';
+
+    const [rows] = await sequelize.query(
+      `
+        SELECT
+          o.*,
+          c.name AS customer_name,
+          c.phone AS customer_phone,
+          oi.id AS order_item_id,
+          oi.product_id,
+          oi.product_variant_id,
+          oi.quantity,
+          oi.price,
+          oi.remarks,
+          oi.status AS item_status,
+          p.product_name,
+          p.product_code,
+          pv.weight_per_unit,
+          u.label AS uom_label,
+          p.attachment_file AS product_image,
+          (oi.quantity * oi.price) AS item_total
+        ${fromJoin}
+        ORDER BY o.created_at DESC
+        ${limitSQL}
+      `,
+      { replacements }
+    );
+
+    const perPage = limit || totalRecords || rows.length || 0;
+    const totalPages = perPage ? Math.ceil(totalRecords / perPage) : 1;
+    const currentPage = limit ? page : 1;
+
+    res.json({
+      status: true,
+      message: 'Order item details fetched successfully',
+      data: {
+        pagination: {
+          total_records: totalRecords,
+          total_pages: totalPages,
+          current_page: currentPage,
+          per_page: perPage,
+          has_next_page: limit ? currentPage < totalPages : false,
+          has_prev_page: limit ? currentPage > 1 : false,
+          next_page: limit && currentPage < totalPages ? currentPage + 1 : null,
+          prev_page: limit && currentPage > 1 ? currentPage - 1 : null,
+        },
+        rows,
+      },
+    });
   } catch (error) {
     console.error("Error fetching full order details:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+exports.getCustomerNotTurnUp = async (req, res) => {
+  try {
+    const companyId = req.user?.company_id;
+    const { page: pageParam, limit: limitParam, search } = req.query;
+
+    const limitIsAll = String(limitParam).toLowerCase() === 'all';
+    const page = Math.max(1, parseInt(pageParam, 10) || 1);
+    const limit = limitIsAll
+      ? null
+      : Math.max(1, Math.min(500, parseInt(limitParam, 10) || 10));
+    const offset = limit ? (page - 1) * limit : 0;
+
+    const whereClauses = ['o.customer_id IS NOT NULL', 'c.id IS NOT NULL'];
+    const replacements = {};
+
+    if (companyId) {
+      whereClauses.push('o.company_id = :companyId');
+      replacements.companyId = companyId;
+    }
+    if (search && String(search).trim() !== '') {
+      whereClauses.push('(c.name LIKE :search OR c.phone LIKE :search OR c.email LIKE :search)');
+      replacements.search = `%${String(search).trim()}%`;
+    }
+
+    const whereSQL = `WHERE ${whereClauses.join(' AND ')}`;
+
+    const [countRows] = await sequelize.query(
+      `
+        SELECT COUNT(DISTINCT o.customer_id) AS total
+        FROM orders o
+        LEFT JOIN customer c ON o.customer_id = c.id
+        ${whereSQL}
+      `,
+      { replacements }
+    );
+    const totalRecords = Number(countRows?.[0]?.total || 0);
+
+    if (limit) {
+      replacements.limit = limit;
+      replacements.offset = offset;
+    }
+    const limitSQL = limit ? 'LIMIT :limit OFFSET :offset' : '';
+
+    const [rows] = await sequelize.query(
+      `
+        SELECT
+          c.id AS customer_id,
+          c.name AS customer_name,
+          c.phone AS customer_phone,
+          c.email AS customer_email,
+          MAX(o.created_at) AS last_purchase_date
+        FROM orders o
+        LEFT JOIN customer c ON o.customer_id = c.id
+        ${whereSQL}
+        GROUP BY c.id, c.name, c.phone, c.email
+        ORDER BY last_purchase_date DESC
+        ${limitSQL}
+      `,
+      { replacements }
+    );
+
+    const perPage = limit || totalRecords || rows.length || 0;
+    const totalPages = perPage ? Math.ceil(totalRecords / perPage) : 1;
+    const currentPage = limit ? page : 1;
+
+    res.json({
+      status: true,
+      message: 'Customer summary fetched successfully',
+      data: {
+        pagination: {
+          total_records: totalRecords,
+          total_pages: totalPages,
+          current_page: currentPage,
+          per_page: perPage,
+          has_next_page: limit ? currentPage < totalPages : false,
+          has_prev_page: limit ? currentPage > 1 : false,
+          next_page: limit && currentPage < totalPages ? currentPage + 1 : null,
+          prev_page: limit && currentPage > 1 ? currentPage - 1 : null,
+        },
+        rows,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching customer summary:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -899,8 +1130,7 @@ exports.getOrderStatusSummary = async (req, res) => {
         const results = await OrderItem.findAll({
             include: [
                 {
-                    model: Order,
-                    as: 'order',
+                    association: 'order',
                     attributes: []
                 }
             ],
