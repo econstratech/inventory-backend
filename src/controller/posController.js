@@ -17,10 +17,10 @@ const {
   TrackProductStock, 
   Customer, 
   ProductStockEntry,
-  Warehouse
+  Warehouse,
+  OrderItem,
+  Order,
 } = require("../model");
-const Order = require("../model/Order");
-const OrderItem = require("../model/OrderItem");
 const PaymentGateway = require("../model/PaymentGateway");
 const { sendMail } = require("../utils/Helper");
 const generateUniqueReferenceNumber = require("../utils/generateReferenceNumber");
@@ -121,6 +121,7 @@ exports.placeOrder = async (req, res) => {
       custom_order_id: customOrderId,
       customer_id,
       company_id: req.user.company_id,
+      user_id: req.user?.id,
       shipping,
       discount,
       subtotal,
@@ -415,6 +416,7 @@ exports.getOrderItemWiseDetails = async (req, res) => {
       page: pageParam,
       limit: limitParam,
       status,
+      payment_status,
       date_from,
       date_to,
       month,
@@ -440,6 +442,10 @@ exports.getOrderItemWiseDetails = async (req, res) => {
       whereClauses.push('oi.status = :status');
       replacements.status = Number(status);
     }
+    if (payment_status && String(payment_status).trim() !== '') {
+      whereClauses.push('o.payment_status = :payment_status');
+      replacements.payment_status = String(payment_status).trim();
+    }
     if (date_from) {
       whereClauses.push('o.created_at >= :date_from');
       replacements.date_from = date_from;
@@ -464,13 +470,16 @@ exports.getOrderItemWiseDetails = async (req, res) => {
     }
 
     const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    // Only the customer + product joins are needed: variant/UOM fields are not
+    // consumed by the frontend, and dropping them avoids two extra joins per row.
+    // customer join stays because `c.name` is used for both search and display.
+    // product join stays because `p.product_name`/`p.product_code` are used for
+    // both search and display, plus `p.attachment_file` for the item image.
     const fromJoin = `
       FROM orders o
       LEFT JOIN customer c ON o.customer_id = c.id
       LEFT JOIN order_items oi ON o.id = oi.order_id
-      LEFT JOIN product p ON oi.product_id = p.id 
-      LEFT JOIN product_variants pv ON oi.product_variant_id = pv.id 
-      LEFT JOIN master_uom u ON pv.uom_id = u.id
+      LEFT JOIN product p ON oi.product_id = p.id
       ${whereSQL}
     `;
 
@@ -486,25 +495,28 @@ exports.getOrderItemWiseDetails = async (req, res) => {
     }
     const limitSQL = limit ? 'LIMIT :limit OFFSET :offset' : '';
 
+    // Explicit column list — replaces `o.*`. Every column below is consumed by
+    // the OrderStatus page in the SPA (the only caller). Adding a column the
+    // SPA doesn't render wastes wire bytes; keep this list and the frontend
+    // in sync.
     const [rows] = await sequelize.query(
       `
         SELECT
-          o.*,
+          o.id,
+          o.custom_order_id,
+          o.grand_total,
+          o.created_at,
+          o.payment_type,
+          o.payment_status,
           c.name AS customer_name,
-          c.phone AS customer_phone,
           oi.id AS order_item_id,
-          oi.product_id,
-          oi.product_variant_id,
           oi.quantity,
           oi.price,
           oi.remarks,
           oi.status AS item_status,
           p.product_name,
           p.product_code,
-          pv.weight_per_unit,
-          u.label AS uom_label,
-          p.attachment_file AS product_image,
-          (oi.quantity * oi.price) AS item_total
+          p.attachment_file AS product_image
         ${fromJoin}
         ORDER BY o.created_at DESC
         ${limitSQL}
@@ -839,8 +851,8 @@ function generateProductRows(items) {
       <td><b>${item.product_name || 'N/A'}</b> <br/> Code: ${item.product_code || 'N/A'}</td>
       <td style="text-align:center;">${getStatusLabel(item.status)}</td>
       <td style="text-align:center;">${item.quantity || 0}</td>
-      <td style="text-align:right;">${(item.price || 0).toFixed(2)}</td>
-      <td style="text-align:right;">${((item.price || 0) * (item.quantity || 0)).toFixed(2)}</td>
+      <td style="text-align:right;">${parseFloat(item.price || 0).toFixed(2)}</td>
+      <td style="text-align:right;">${(parseFloat(item.price || 0) * parseFloat(item.quantity || 0)).toFixed(2)}</td>
     </tr>
   `).join('');
 }
@@ -849,15 +861,16 @@ function generateProductRows(items) {
 async function generateInvoiceHtml(order, items, customer, company) {
   const templatePath = path.join(__dirname, '../templates/posinvoice.html');
   let html = await fs.readFile(templatePath, 'utf8');
-const total = parseFloat(order.grand_total || 0);
-const whole = Math.floor(total);
-const fraction = Math.round((total - whole) * 100);
+  const grandTotal = parseFloat(order.grand_total).toFixed(2) || '0.00';
+  const total = parseFloat(order.grand_total || 0);
+  const whole = Math.floor(total);
+  const fraction = Math.round((total - whole) * 100);
 
-let amountInWords = `${toWords(whole)} Rupees`;
-if (fraction > 0) {
-  amountInWords += ` and ${toWords(fraction)} Paise`;
-}
-amountInWords += ' Only';
+  let amountInWords = `${toWords(whole)} Rupees`;
+  if (fraction > 0) {
+    amountInWords += ` and ${toWords(fraction)} Paise`;
+  }
+  amountInWords += ' Only';
 
   html = html.replace(/{{INVOICE_NUMBER}}/g, order.custom_order_id);
   html = html.replace(/{{ORDER_ID}}/g, order.custom_order_id);
@@ -881,14 +894,14 @@ amountInWords += ' Only';
   html = html.replace(/{{CGST}}/g, (order.cgst || 0).toFixed(2));
   html = html.replace(/{{SGST}}/g, (order.sgst || 0).toFixed(2));
   html = html.replace(/{{DISCOUNT}}/g, order.discount?.toFixed(2) || '0.00');
-  html = html.replace(/{{GRAND_TOTAL}}/g, order.grand_total?.toFixed(2) || '0.00');
+  html = html.replace(/{{GRAND_TOTAL}}/g, grandTotal);
 
   html = html.replace(/{{PRODUCT_ROWS}}/g, generateProductRows(items));
-html = html.replace(/{{COMPANY_NAME}}/g, company?.company_name || 'N/A');
-html = html.replace(/{{COMPANY_ADDRESS}}/g, company?.address || 'N/A');
-html = html.replace(/{{COMPANY_GSTIN}}/g, company?.gst || 'N/A');
-html = html.replace(/{{COMPANY_PHONE}}/g, company?.company_phone || 'N/A');
-html = html.replace(/{{AMOUNT_IN_WORDS}}/g, amountInWords);
+  html = html.replace(/{{COMPANY_NAME}}/g, company?.company_name || 'N/A');
+  html = html.replace(/{{COMPANY_ADDRESS}}/g, company?.address || 'N/A');
+  html = html.replace(/{{COMPANY_GSTIN}}/g, company?.gst || 'N/A');
+  html = html.replace(/{{COMPANY_PHONE}}/g, company?.company_phone || 'N/A');
+  html = html.replace(/{{AMOUNT_IN_WORDS}}/g, amountInWords);
 
 
   return html;
@@ -935,29 +948,54 @@ exports.downloadInvoice = async (req, res) => {
     }
  
     // Step 1: Get the item and order
-    const selectedItem = await OrderItem.findOne({ where: { id: order_item_id } });
+    const selectedItem = await OrderItem.findOne({
+      attributes: ['id', 'order_id'],
+      where: { id: order_item_id },
+      raw: true,
+      nest: true,
+      include: [
+        {
+          association: 'order',
+          attributes: ['id', 'customer_id', 'company_id', 'custom_order_id', 'grand_total', 'payment_status'],
+          required: true,
+        }
+      ]
+    });
     if (!selectedItem) return res.status(404).json({ message: 'Order item not found' });
 
-    const order_id = selectedItem.order_id;
-    const order = await Order.findOne({ where: { id: order_id } });
-    if (!order) return res.status(404).json({ message: 'Order not found' });
+    const order = selectedItem.order;
+    // const order = await Order.findOne({
+    //   attributes: ['id', 'customer_id', 'company_id', 'custom_order_id', 'grand_total', 'payment_status'],
+    //   where: { id: order_id },
+    //   raw: true,
+    // });
+    // if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    const items = await OrderItem.findAll({ where: { order_id } });
+    const [items, customer, company] = await Promise.all([
+      OrderItem.findAll({ 
+        where: { order_id: order.id },
+        include: [
+          { association: 'product', attributes: ['product_name', 'product_code'] },
+          { association: 'productVariant', attributes: ['id', 'weight_per_unit', 'quantity_per_pack', 'weight_per_pack'] },
+        ]
+      }),
+      Customer.findOne({ where: { id: order.customer_id } }),
+      Company.findOne({ where: { id: order.company_id } })
+    ]);
+
+    // const productIds = items.map(i => i.product_id);
 
     // Fetch product name/code from Product table
-    for (const item of items) {
-      const product = await Product.findByPk(item.product_id);
-      item.product_name = product?.product_name || 'N/A';
-      item.product_code = product?.product_code || 'N/A';
-    }
-
-    const customer = await Customer.findOne({ where: { id: order.customer_id } });
-    const company = await Company.findOne({ where: { id: order.company_id } });
+    // for (const item of items) {
+    //   const product = await Product.findByPk(item.product_id);
+    //   item.product_name = product?.product_name || 'N/A';
+    //   item.product_code = product?.product_code || 'N/A';
+    // }
 
     // Step 2: Generate invoice HTML and PDF
     const html = await generateInvoiceHtml(order, items, customer, company);
     const fileName = `invoice-${order.custom_order_id}.pdf`;
-   const { status, data: pdfPath } = await generatePdf(html, fileName);
+    const { status, data: pdfPath } = await generatePdf(html, fileName);
 
 	 // const pdfPath = await generatePdf(html, fileName);
 
@@ -971,7 +1009,7 @@ exports.downloadInvoice = async (req, res) => {
           <h2>Hello ${customer.name},</h2>
           <p>Thank you for your order. Please find attached your invoice.</p>
           <p><strong>Order:</strong> ${order.custom_order_id}</p>
-          <p><strong>Total:</strong> ₹${order.grand_total?.toFixed(2)}</p>
+          <p><strong>Total:</strong> ₹${parseFloat(order.grand_total).toFixed(2)}</p>
           <p><strong>Payment Status:</strong> ${order.payment_status}</p>
           <br/>
           <p>- ${company?.name || 'Your Company'}</p>
@@ -1003,8 +1041,7 @@ exports.getCancelledOrders = async (req, res) => {
       where: { status: 2 },
       include: [
         {
-          model: Order,
-          as: 'order',
+          association: 'order',
           where: { company_id: companyId },
           include: [
             { model: Customer, as: 'customer' }

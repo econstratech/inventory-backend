@@ -19,6 +19,10 @@ const Order = sequelize.define(
       type: DataTypes.BIGINT.UNSIGNED,
       allowNull: false,
     },
+    user_id: {
+      type: DataTypes.BIGINT.UNSIGNED,
+      allowNull: false,
+    },
     shipping: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
